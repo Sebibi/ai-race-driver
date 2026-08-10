@@ -1,7 +1,54 @@
 [project]
 name = "ai-race-driver"
 version = "0.1.0"
-description = "Add your description here"
+description = "A fast, fully JAX-native reinforcement-learning racing environment"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "distrax>=0.1.7",
+    "flax>=0.10.7",
+    "gymnax>=0.0.9",
+    "jax>=0.7.0",
+    "optax>=0.2.5",
+    "scipy>=1.15",
+]
+
+[project.scripts]
+ai-race-train = "ai_race_driver.cli.train:main"
+ai-race-eval = "ai_race_driver.cli.evaluate:main"
+ai-race-benchmark = "ai_race_driver.cli.benchmark:main"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.17",
+    "pytest>=8.4",
+    "pytest-cov>=6.2",
+    "ruff>=0.12",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ai_race_driver"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+markers = [
+    "slow: longer-running learning acceptance tests",
+]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "SIM", "UP", "W"]
+
+[tool.mypy]
+python_version = "3.13"
+packages = ["ai_race_driver"]
+ignore_missing_imports = true
+warn_unused_ignores = true

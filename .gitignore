@@ -5,6 +5,14 @@ build/
 dist/
 wheels/
 *.egg-info
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Virtual environments
-.venv
+.venv/
+
+# Generated training outputs
+artifacts/
