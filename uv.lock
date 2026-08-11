@@ -33,6 +33,7 @@ dependencies = [
     { name = "gymnax" },
     { name = "jax" },
     { name = "optax" },
+    { name = "pytest" },
     { name = "scipy" },
 ]
 
@@ -52,6 +53,7 @@ requires-dist = [
     { name = "gymnax", specifier = ">=0.0.9" },
     { name = "jax", specifier = ">=0.7.0" },
     { name = "optax", specifier = ">=0.2.5" },
+    { name = "pytest", specifier = ">=9.1.1" },
     { name = "scipy", specifier = ">=1.15" },
 ]
 

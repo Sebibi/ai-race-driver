@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--total-timesteps", type=int, default=10_000_000)
+    parser.add_argument("--total-timesteps", type=int, default=8_388_608)
     parser.add_argument("--num-envs", type=int, default=2_048)
     parser.add_argument("--num-steps", type=int, default=128)
     parser.add_argument("--output", type=Path, default=Path("artifacts/latest"))
@@ -26,6 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    logger.info("JAX devices: %s", jax.devices())
     args = build_parser().parse_args()
     configure_logging(args.log_level)
     config = PPOConfig(
@@ -34,7 +35,9 @@ def main() -> None:
         num_steps=args.num_steps,
     )
     env, env_params = make_default_env(randomize_reset=True)
+    logger.info("Compiling PPO training function with config: %s", config)
     compiled_train = jax.jit(make_train(env, env_params, config))
+    logger.info("PPO training function compiled successfully.")
 
     logger.info("Starting PPO training on %s", jax.devices()[0])
     started = time.perf_counter()
