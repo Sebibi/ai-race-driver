@@ -127,6 +127,21 @@ uv run ai-race-benchmark --num-envs 2048 --num-steps 1000
 AI_RACE_RUN_SLOW=1 uv run pytest -m slow
 ```
 
+## Pre-PR verification
+
+Before opening or updating a pull request, run every command from
+`.github/workflows/ci.yml` locally, in workflow order, and fix all failures:
+
+```bash
+uv sync --locked
+uv run ruff check .
+uv run mypy
+uv run pytest
+```
+
+Treat the workflow as the source of truth if its commands change. Do not open or update the
+pull request until this local CI sequence passes.
+
 ## Verification by change type
 
 - Vehicle or track math: run the relevant unit file plus the environment tests; cover plain,
