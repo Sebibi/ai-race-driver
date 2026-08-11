@@ -36,8 +36,9 @@ def main() -> None:
     )
     env, env_params = make_default_env(randomize_reset=True)
     logger.info("Compiling PPO training function with config: %s", config)
+    compile_start = time.perf_counter()
     compiled_train = jax.jit(make_train(env, env_params, config))
-    logger.info("PPO training function compiled successfully.")
+    logger.info("Compilation took %.3f seconds", time.perf_counter() - compile_start)
 
     logger.info("Starting PPO training on %s", jax.devices()[0])
     started = time.perf_counter()
