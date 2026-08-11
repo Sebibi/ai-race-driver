@@ -3,15 +3,21 @@
 import argparse
 import logging
 import time
+from dataclasses import asdict
 from pathlib import Path
+from typing import Any, Literal
 
 import jax
 
+import wandb
 from ai_race_driver.envs.racing import make_default_env
 from ai_race_driver.logging import LOG_LEVELS, configure_logging
 from ai_race_driver.training.ppo import PPOConfig, make_train, save_checkpoint
 
 logger = logging.getLogger(__name__)
+
+WandbMode = Literal["online", "offline", "disabled"]
+WANDB_MODES: tuple[WandbMode, ...] = ("online", "offline", "disabled")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,7 +28,46 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-steps", type=int, default=128)
     parser.add_argument("--output", type=Path, default=Path("artifacts/latest"))
     parser.add_argument("--log-level", choices=LOG_LEVELS, default="INFO")
+    parser.add_argument("--wandb-project", help="log this training run to a W&B project")
+    parser.add_argument("--wandb-entity", help="W&B team or user owning the project")
+    parser.add_argument("--wandb-name", help="optional W&B run name")
+    parser.add_argument("--wandb-mode", choices=WANDB_MODES, default="online")
     return parser
+
+
+def log_wandb_run(
+    *,
+    project: str,
+    entity: str | None,
+    name: str | None,
+    mode: WandbMode,
+    config: PPOConfig,
+    seed: int,
+    metrics: Any,
+    summary: dict[str, Any],
+) -> None:
+    """Log completed device-side training metrics from the host."""
+
+    host_metrics = jax.device_get(metrics)
+    with wandb.init(
+        project=project,
+        entity=entity,
+        name=name,
+        mode=mode,
+        config={"seed": seed, **asdict(config)},
+    ) as run:
+        for update_index in range(config.num_updates):
+            run.log(
+                {
+                    "train/timesteps": (update_index + 1) * config.batch_size,
+                    **{
+                        f"train/{metric_name}": float(metric_values[update_index])
+                        for metric_name, metric_values in host_metrics._asdict().items()
+                    },
+                },
+                step=update_index + 1,
+            )
+        run.summary.update(summary)
 
 
 def main() -> None:
@@ -59,6 +104,18 @@ def main() -> None:
     }
     save_checkpoint(args.output, output.train_state.params, config, summary)
     logger.info("Saved checkpoint to %s", args.output)
+    if args.wandb_project:
+        log_wandb_run(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            name=args.wandb_name,
+            mode=args.wandb_mode,
+            config=config,
+            seed=args.seed,
+            metrics=output.metrics,
+            summary=summary,
+        )
+        logger.info("Logged training metrics to W&B project %s", args.wandb_project)
     for name, value in summary.items():
         logger.info("%s: %s", name, value)
 

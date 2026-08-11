@@ -33,6 +33,9 @@ uv run ai-race-train --num-envs 8 --num-steps 8 --total-timesteps 128
 # Accelerator-oriented defaults
 uv run ai-race-train --output artifacts/oval-seed-0
 
+# Log hyperparameters, per-update metrics, and the final summary to W&B
+uv run ai-race-train --wandb-project ai-race-driver --wandb-name oval-seed-0
+
 # Deterministic fixed-start evaluation
 uv run ai-race-eval artifacts/oval-seed-0 --episodes 3
 
@@ -43,6 +46,9 @@ uv run ai-race-benchmark --num-envs 2048 --num-steps 1000 --output artifacts/ben
 Benchmark output separates compilation time from steady-state execution and calls `block_until_ready()` before timing completes.
 All commands write color-coded logs to stderr when attached to a terminal. Pass `--log-level`
 with `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` to control their verbosity.
+W&B tracking is opt-in through `--wandb-project`; add `--wandb-entity` for a team project or
+`--wandb-mode offline` to record a local run without sending data. Generated W&B state is kept
+under the ignored `wandb/` directory.
 
 ## Architecture
 

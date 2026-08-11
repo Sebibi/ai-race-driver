@@ -114,6 +114,9 @@ uv run pytest
 # Small end-to-end training/checkpoint smoke run
 uv run ai-race-train --num-envs 8 --num-steps 8 --total-timesteps 128
 
+# Opt-in W&B experiment tracking; use --wandb-mode offline for local-only logging
+uv run ai-race-train --wandb-project ai-race-driver
+
 # Deterministic checkpoint evaluation
 uv run ai-race-eval artifacts/latest --episodes 3
 

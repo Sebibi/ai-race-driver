@@ -13,6 +13,7 @@ dependencies = [
     "optax>=0.2.5",
     "pytest>=9.1.1",
     "scipy>=1.15",
+    "wandb>=0.28.1",
 ]
 
 [project.scripts]
