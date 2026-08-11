@@ -1,13 +1,17 @@
 """Train PPO on the built-in oval."""
 
 import argparse
+import logging
 import time
 from pathlib import Path
 
 import jax
 
 from ai_race_driver.envs.racing import make_default_env
+from ai_race_driver.logging import LOG_LEVELS, configure_logging
 from ai_race_driver.training.ppo import PPOConfig, make_train, save_checkpoint
+
+logger = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -17,11 +21,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-envs", type=int, default=2_048)
     parser.add_argument("--num-steps", type=int, default=128)
     parser.add_argument("--output", type=Path, default=Path("artifacts/latest"))
+    parser.add_argument("--log-level", choices=LOG_LEVELS, default="INFO")
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
+    configure_logging(args.log_level)
     config = PPOConfig(
         total_timesteps=args.total_timesteps,
         num_envs=args.num_envs,
@@ -30,6 +36,7 @@ def main() -> None:
     env, env_params = make_default_env(randomize_reset=True)
     compiled_train = jax.jit(make_train(env, env_params, config))
 
+    logger.info("Starting PPO training on %s", jax.devices()[0])
     started = time.perf_counter()
     output = compiled_train(jax.random.key(args.seed))
     jax.block_until_ready(output.metrics.loss)
@@ -47,9 +54,9 @@ def main() -> None:
         "final_mean_completed_return": final_metrics.mean_completed_return,
     }
     save_checkpoint(args.output, output.train_state.params, config, summary)
-    print(f"checkpoint: {args.output}")
+    logger.info("Saved checkpoint to %s", args.output)
     for name, value in summary.items():
-        print(f"{name}: {value}")
+        logger.info("%s: %s", name, value)
 
 
 if __name__ == "__main__":

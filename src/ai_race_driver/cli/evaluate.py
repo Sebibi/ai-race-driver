@@ -2,13 +2,17 @@
 
 import argparse
 import json
+import logging
 from pathlib import Path
 
 import jax
 import jax.numpy as jnp
 
 from ai_race_driver.envs.racing import make_default_env
+from ai_race_driver.logging import LOG_LEVELS, configure_logging
 from ai_race_driver.training.ppo import ActorCritic, deterministic_action, load_checkpoint
+
+logger = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -16,11 +20,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("checkpoint", type=Path)
     parser.add_argument("--episodes", type=int, default=3)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--log-level", choices=LOG_LEVELS, default="INFO")
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
+    configure_logging(args.log_level)
+    logger.info("Loading checkpoint from %s", args.checkpoint)
     metadata = json.loads((args.checkpoint / "metadata.json").read_text())
     hidden_size = int(metadata["ppo"]["hidden_size"])
     model = ActorCritic(action_dim=2, hidden_size=hidden_size)
@@ -41,11 +48,14 @@ def main() -> None:
         if bool(info["returned_episode"]):
             completed += 1
             returns.append(float(info["returned_episode_return"]))
-            print(
-                f"episode={completed} return={returns[-1]:.3f} "
-                f"lap={bool(info['lap_complete'])} off_track={bool(info['off_track'])}"
+            logger.info(
+                "episode=%d return=%.3f lap=%s off_track=%s",
+                completed,
+                returns[-1],
+                bool(info["lap_complete"]),
+                bool(info["off_track"]),
             )
-    print(f"mean_return: {float(jnp.mean(jnp.asarray(returns))):.3f}")
+    logger.info("mean_return: %.3f", float(jnp.mean(jnp.asarray(returns))))
 
 
 if __name__ == "__main__":
