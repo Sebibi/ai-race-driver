@@ -35,7 +35,7 @@ def _time_call(function, *args):
 
 def main() -> None:
     args = build_parser().parse_args()
-    configure_logging(args.log_level)
+    configure_logging(args.log_level, entrypoint_logger=logger)
     logger.info("Benchmarking on %s", jax.devices()[0])
     env, env_params = make_default_env(randomize_reset=True)
     vector_reset = jax.vmap(env.reset, in_axes=(0, None))

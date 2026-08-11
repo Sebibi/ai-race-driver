@@ -26,9 +26,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    logger.info("JAX devices: %s", jax.devices())
     args = build_parser().parse_args()
-    configure_logging(args.log_level)
+    configure_logging(args.log_level, entrypoint_logger=logger)
+    logger.info("JAX devices: %s", jax.devices())
     config = PPOConfig(
         total_timesteps=args.total_timesteps,
         num_envs=args.num_envs,

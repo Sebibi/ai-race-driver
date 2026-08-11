@@ -44,3 +44,22 @@ def test_configure_logging_sets_package_level_and_stream() -> None:
     assert logging.getLogger("ai_race_driver").level == logging.DEBUG
     assert "DEBUG" in stream.getvalue()
     assert "diagnostic" in stream.getvalue()
+
+
+def test_configure_logging_handles_direct_script_logger() -> None:
+    stream = io.StringIO()
+    direct_logger = logging.getLogger("__main__")
+    original_handlers = direct_logger.handlers.copy()
+    original_level = direct_logger.level
+    original_propagate = direct_logger.propagate
+    try:
+        configure_logging("INFO", stream=stream, entrypoint_logger=direct_logger)
+
+        direct_logger.info("direct invocation")
+
+        assert "INFO" in stream.getvalue()
+        assert "direct invocation" in stream.getvalue()
+    finally:
+        direct_logger.handlers = original_handlers
+        direct_logger.setLevel(original_level)
+        direct_logger.propagate = original_propagate

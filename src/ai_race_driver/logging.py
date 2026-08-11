@@ -39,8 +39,13 @@ class ColorFormatter(logging.Formatter):
         return super().format(colored_record)
 
 
-def configure_logging(level: str = "INFO", *, stream: TextIO | None = None) -> None:
-    """Configure package logging for a CLI process."""
+def configure_logging(
+    level: str = "INFO",
+    *,
+    stream: TextIO | None = None,
+    entrypoint_logger: logging.Logger | None = None,
+) -> None:
+    """Configure package and direct-script logging for a CLI process."""
     output = stream if stream is not None else sys.stderr
     just_fix_windows_console()
 
@@ -52,3 +57,13 @@ def configure_logging(level: str = "INFO", *, stream: TextIO | None = None) -> N
     package_logger.addHandler(handler)
     package_logger.setLevel(level.upper())
     package_logger.propagate = False
+
+    is_package_logger = entrypoint_logger is not None and (
+        entrypoint_logger.name == "ai_race_driver"
+        or entrypoint_logger.name.startswith("ai_race_driver.")
+    )
+    if entrypoint_logger is not None and not is_package_logger:
+        entrypoint_logger.handlers.clear()
+        entrypoint_logger.addHandler(handler)
+        entrypoint_logger.setLevel(level.upper())
+        entrypoint_logger.propagate = False

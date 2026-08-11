@@ -26,7 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
-    configure_logging(args.log_level)
+    configure_logging(args.log_level, entrypoint_logger=logger)
     logger.info("Loading checkpoint from %s", args.checkpoint)
     metadata = json.loads((args.checkpoint / "metadata.json").read_text())
     hidden_size = int(metadata["ppo"]["hidden_size"])
