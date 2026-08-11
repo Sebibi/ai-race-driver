@@ -70,6 +70,14 @@ class PPOConfig:
             hidden_size=32,
         )
 
+    def __str__(self) -> str:
+        fields = asdict(self)
+        return "PPOConfig(\n" + "\n".join(
+            f"  {key}={value}" for key, value in fields.items()
+        ) + "\n)"
+
+
+
 
 class ActorCritic(nn.Module):
     """Separate actor and critic MLP towers."""

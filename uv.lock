@@ -27,11 +27,13 @@ name = "ai-race-driver"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "colorama" },
     { name = "distrax" },
     { name = "flax" },
     { name = "gymnax" },
     { name = "jax" },
     { name = "optax" },
+    { name = "pytest" },
     { name = "scipy" },
 ]
 
@@ -45,11 +47,13 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "colorama", specifier = ">=0.4.6" },
     { name = "distrax", specifier = ">=0.1.7" },
     { name = "flax", specifier = ">=0.10.7" },
     { name = "gymnax", specifier = ">=0.0.9" },
     { name = "jax", specifier = ">=0.7.0" },
     { name = "optax", specifier = ">=0.2.5" },
+    { name = "pytest", specifier = ">=9.1.1" },
     { name = "scipy", specifier = ">=1.15" },
 ]
 

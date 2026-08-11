@@ -41,6 +41,8 @@ uv run ai-race-benchmark --num-envs 2048 --num-steps 1000 --output artifacts/ben
 ```
 
 Benchmark output separates compilation time from steady-state execution and calls `block_until_ready()` before timing completes.
+All commands write color-coded logs to stderr when attached to a terminal. Pass `--log-level`
+with `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` to control their verbosity.
 
 ## Architecture
 

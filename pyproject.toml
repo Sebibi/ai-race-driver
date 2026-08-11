@@ -5,11 +5,13 @@ description = "A fast, fully JAX-native reinforcement-learning racing environmen
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "colorama>=0.4.6",
     "distrax>=0.1.7",
     "flax>=0.10.7",
     "gymnax>=0.0.9",
     "jax>=0.7.0",
     "optax>=0.2.5",
+    "pytest>=9.1.1",
     "scipy>=1.15",
 ]
 

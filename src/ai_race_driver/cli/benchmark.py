@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import logging
 import time
 from pathlib import Path
 
@@ -9,7 +10,10 @@ import jax
 import jax.numpy as jnp
 
 from ai_race_driver.envs.racing import make_default_env
+from ai_race_driver.logging import LOG_LEVELS, configure_logging
 from ai_race_driver.training.ppo import PPOConfig, make_train
+
+logger = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -18,6 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-steps", type=int, default=1_000)
     parser.add_argument("--ppo", action="store_true", help="also benchmark a small PPO run")
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--log-level", choices=LOG_LEVELS, default="INFO")
     return parser
 
 
@@ -30,6 +35,8 @@ def _time_call(function, *args):
 
 def main() -> None:
     args = build_parser().parse_args()
+    configure_logging(args.log_level, entrypoint_logger=logger)
+    logger.info("Benchmarking on %s", jax.devices()[0])
     env, env_params = make_default_env(randomize_reset=True)
     vector_reset = jax.vmap(env.reset, in_axes=(0, None))
     vector_step = jax.vmap(env.step, in_axes=(0, 0, 0, None))
@@ -91,6 +98,7 @@ def main() -> None:
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered + "\n")
+        logger.info("Wrote benchmark results to %s", args.output)
 
 
 if __name__ == "__main__":
