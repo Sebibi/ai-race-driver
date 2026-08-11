@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 import jax
-
 import wandb
+
 from ai_race_driver.envs.racing import make_default_env
 from ai_race_driver.logging import LOG_LEVELS, configure_logging
 from ai_race_driver.training.ppo import PPOConfig, make_train, save_checkpoint

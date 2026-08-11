@@ -142,6 +142,11 @@ uv run pytest
 Treat the workflow as the source of truth if its commands change. Do not open or update the
 pull request until this local CI sequence passes.
 
+After opening a pull request or pushing new commits to an existing pull request, wait for all
+GitHub checks to finish with `gh pr checks --watch`. If any check fails, inspect its Actions
+logs, fix the underlying issue, rerun the local CI sequence, push the fix, and watch the new
+checks. Do not report the pull request as ready while checks are pending or failing.
+
 ## Verification by change type
 
 - Vehicle or track math: run the relevant unit file plus the environment tests; cover plain,
