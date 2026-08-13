@@ -48,7 +48,10 @@ All commands write color-coded logs to stderr when attached to a terminal. Pass 
 with `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` to control their verbosity.
 W&B tracking is opt-in through `--wandb-project`; add `--wandb-entity` for a team project or
 `--wandb-mode offline` to record a local run without sending data. Generated W&B state is kept
-under the ignored `wandb/` directory.
+under the ignored `wandb/` directory. The training command loads `.env` with `python-dotenv`, so
+HPC jobs can configure `WANDB_API_KEY`, `WANDB_PROJECT`, `WANDB_ENTITY`, `WANDB_NAME`, and
+`WANDB_MODE` as environment variables. Exported job variables take precedence over `.env`, and
+command-line options take precedence over both.
 
 ## Architecture
 

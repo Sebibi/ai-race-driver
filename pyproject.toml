@@ -11,6 +11,7 @@ dependencies = [
     "gymnax>=0.0.9",
     "jax>=0.7.0",
     "optax>=0.2.5",
+    "python-dotenv>=1.1",
     "pytest>=9.1.1",
     "scipy>=1.15",
     "wandb>=0.28.1",
