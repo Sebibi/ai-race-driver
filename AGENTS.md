@@ -29,6 +29,7 @@ The implemented vertical slice includes:
 ├── src/ai_race_driver/
 │   ├── AGENTS.md                     # JAX-specific implementation constraints
 │   ├── __init__.py                   # Supported top-level public exports
+│   ├── configuration.py              # Environment validation and dotenv fallback
 │   ├── py.typed                      # Typed-package marker
 │   ├── vehicle/
 │   │   ├── base.py                   # Generic pure `VehicleModel` protocol
@@ -114,8 +115,8 @@ uv run pytest
 # Small end-to-end training/checkpoint smoke run
 uv run ai-race-train --num-envs 8 --num-steps 8 --total-timesteps 128
 
-# Opt-in W&B experiment tracking; use --wandb-mode offline for local-only logging
-uv run ai-race-train --wandb-project ai-race-driver
+# W&B experiment tracking uses required environment variables or the local .env
+uv run ai-race-train
 
 # Deterministic checkpoint evaluation
 uv run ai-race-eval artifacts/latest --episodes 3

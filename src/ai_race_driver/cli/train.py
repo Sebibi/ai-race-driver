@@ -2,25 +2,20 @@
 
 import argparse
 import logging
-import os
 import time
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import jax
 import wandb
-from dotenv import load_dotenv
 
+from ai_race_driver.configuration import setup_environment
 from ai_race_driver.envs.racing import make_default_env
 from ai_race_driver.logging import LOG_LEVELS, configure_logging
 from ai_race_driver.training.ppo import PPOConfig, make_train, save_checkpoint
 
 logger = logging.getLogger(__name__)
-
-WandbMode = Literal["online", "offline", "disabled"]
-WANDB_MODES: tuple[WandbMode, ...] = ("online", "offline", "disabled")
-
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -30,36 +25,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-steps", type=int, default=128)
     parser.add_argument("--output", type=Path, default=Path("artifacts/latest"))
     parser.add_argument("--log-level", choices=LOG_LEVELS, default="INFO")
-    parser.add_argument(
-        "--wandb-project",
-        default=os.environ.get("WANDB_PROJECT") or None,
-        help="W&B project (default: WANDB_PROJECT)",
-    )
-    parser.add_argument(
-        "--wandb-entity",
-        default=os.environ.get("WANDB_ENTITY") or None,
-        help="W&B team or user (default: WANDB_ENTITY)",
-    )
-    parser.add_argument(
-        "--wandb-name",
-        default=os.environ.get("WANDB_NAME") or None,
-        help="W&B run name (default: WANDB_NAME)",
-    )
-    parser.add_argument(
-        "--wandb-mode",
-        choices=WANDB_MODES,
-        default=os.environ.get("WANDB_MODE") or "online",
-        help="W&B operating mode (default: WANDB_MODE or online)",
-    )
     return parser
 
 
 def log_wandb_run(
     *,
-    project: str,
-    entity: str | None,
-    name: str | None,
-    mode: WandbMode,
     config: PPOConfig,
     seed: int,
     metrics: Any,
@@ -68,13 +38,7 @@ def log_wandb_run(
     """Log completed device-side training metrics from the host."""
 
     host_metrics = jax.device_get(metrics)
-    with wandb.init(
-        project=project,
-        entity=entity,
-        name=name,
-        mode=mode,
-        config={"seed": seed, **asdict(config)},
-    ) as run:
+    with wandb.init(config={"seed": seed, **asdict(config)}) as run:
         for update_index in range(config.num_updates):
             run.log(
                 {
@@ -90,9 +54,9 @@ def log_wandb_run(
 
 
 def main() -> None:
-    load_dotenv()
     args = build_parser().parse_args()
     configure_logging(args.log_level, entrypoint_logger=logger)
+    setup_environment()
     logger.info("JAX devices: %s", jax.devices())
     config = PPOConfig(
         total_timesteps=args.total_timesteps,
@@ -124,18 +88,13 @@ def main() -> None:
     }
     save_checkpoint(args.output, output.train_state.params, config, summary)
     logger.info("Saved checkpoint to %s", args.output)
-    if args.wandb_project:
-        log_wandb_run(
-            project=args.wandb_project,
-            entity=args.wandb_entity,
-            name=args.wandb_name,
-            mode=args.wandb_mode,
-            config=config,
-            seed=args.seed,
-            metrics=output.metrics,
-            summary=summary,
-        )
-        logger.info("Logged training metrics to W&B project %s", args.wandb_project)
+    log_wandb_run(
+        config=config,
+        seed=args.seed,
+        metrics=output.metrics,
+        summary=summary,
+    )
+    logger.info("Logged training metrics to W&B")
     for name, value in summary.items():
         logger.info("%s: %s", name, value)
 
