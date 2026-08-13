@@ -72,11 +72,9 @@ class PPOConfig:
 
     def __str__(self) -> str:
         fields = asdict(self)
-        return "PPOConfig(\n" + "\n".join(
-            f"  {key}={value}" for key, value in fields.items()
-        ) + "\n)"
-
-
+        return (
+            "PPOConfig(\n" + "\n".join(f"  {key}={value}" for key, value in fields.items()) + "\n)"
+        )
 
 
 class ActorCritic(nn.Module):
@@ -125,14 +123,48 @@ class Transition(NamedTuple):
     lap_complete: jax.Array
     returned_episode: jax.Array
     returned_episode_return: jax.Array
+    returned_episode_length: jax.Array
+    off_track: jax.Array
+    time_limit: jax.Array
 
 
 class UpdateMetrics(NamedTuple):
     loss: jax.Array
+    policy_loss: jax.Array
+    value_loss: jax.Array
+    entropy: jax.Array
+    approx_kl: jax.Array
+    clip_fraction: jax.Array
+    gradient_norm: jax.Array
+    explained_variance: jax.Array
+    learning_rate: jax.Array
     mean_reward: jax.Array
     completed_laps: jax.Array
     completed_episodes: jax.Array
     mean_completed_return: jax.Array
+    completed_return_sum: jax.Array
+    completed_return_squared_sum: jax.Array
+    mean_completed_length: jax.Array
+    completed_length_sum: jax.Array
+    off_track_episodes: jax.Array
+    time_limit_episodes: jax.Array
+
+
+class TrainingRunnerState(NamedTuple):
+    """Persistent on-device state threaded through compiled training chunks."""
+
+    train_state: TrainState
+    environment_state: Any
+    observation: jax.Array
+    key: jax.Array
+    update_index: jax.Array
+
+
+class TrainingChunkOutput(NamedTuple):
+    """Updated runner state and metrics produced by one compiled chunk."""
+
+    runner_state: TrainingRunnerState
+    metrics: UpdateMetrics
 
 
 class TrainOutput(NamedTuple):
@@ -174,12 +206,12 @@ def deterministic_action(model: ActorCritic, params: Any, observation: jax.Array
     return jnp.tanh(network_output[0])
 
 
-def make_train(
+def make_training_fns(
     env: RacingEnv,
     env_params: RacingEnvParams,
     config: PPOConfig,
 ):
-    """Build a pure training function suitable for one outer ``jax.jit``."""
+    """Build pure initialization and resumable chunk functions for PPO."""
 
     num_updates = config.num_updates
     minibatch_size = config.minibatch_size
@@ -199,7 +231,7 @@ def make_train(
         optax.adam(learning_rate, eps=1e-5),
     )
 
-    def train(key: jax.Array) -> TrainOutput:
+    def initialize(key: jax.Array) -> TrainingRunnerState:
         key, initialization_key, reset_key = jax.random.split(key, 3)
         initial_observation = jnp.zeros(env.observation_space(env_params).shape, dtype=jnp.float32)
         parameters = model.init(initialization_key, initial_observation)
@@ -207,156 +239,253 @@ def make_train(
 
         reset_keys = jax.random.split(reset_key, config.num_envs)
         observations, environment_state = vector_reset(reset_keys, env_params)
-        runner_state = (train_state, environment_state, observations, key)
+        return TrainingRunnerState(
+            train_state=train_state,
+            environment_state=environment_state,
+            observation=observations,
+            key=key,
+            update_index=jnp.asarray(0, dtype=jnp.int32),
+        )
 
-        def update_step(runner_state, _):
-            def environment_step(runner_state, _):
-                train_state, environment_state, observation, key = runner_state
-                key, action_key, step_key = jax.random.split(key, 3)
-                mean, log_std, value = model.apply(train_state.params, observation)
-                action, log_probability = sample_squashed_action(mean, log_std, action_key)
-                step_keys = jax.random.split(step_key, config.num_envs)
-                next_observation, environment_state, reward, done, info = vector_step(
-                    step_keys, environment_state, action, env_params
-                )
-                transition = Transition(
-                    done=done,
-                    action=action,
-                    value=value,
-                    reward=reward,
-                    log_probability=log_probability,
-                    observation=observation,
-                    lap_complete=info["lap_complete"],
-                    returned_episode=info["returned_episode"],
-                    returned_episode_return=info["returned_episode_return"],
-                )
-                return (
-                    train_state,
-                    environment_state,
-                    next_observation,
-                    key,
-                ), transition
-
-            runner_state, trajectory = jax.lax.scan(
-                environment_step, runner_state, None, length=config.num_steps
+    def update_step(runner_state: TrainingRunnerState, _: None):
+        def environment_step(runner_state, _):
+            train_state, environment_state, observation, key = runner_state
+            key, action_key, step_key = jax.random.split(key, 3)
+            mean, log_std, value = model.apply(train_state.params, observation)
+            action, log_probability = sample_squashed_action(mean, log_std, action_key)
+            step_keys = jax.random.split(step_key, config.num_envs)
+            next_observation, environment_state, reward, done, info = vector_step(
+                step_keys, environment_state, action, env_params
             )
-            train_state, environment_state, last_observation, key = runner_state
-            _, _, last_value = model.apply(train_state.params, last_observation)
-
-            def calculate_gae(carry, transition):
-                advantage, next_value = carry
-                not_done = 1.0 - transition.done.astype(jnp.float32)
-                delta = transition.reward + config.gamma * next_value * not_done - transition.value
-                advantage = delta + config.gamma * config.gae_lambda * not_done * advantage
-                return (advantage, transition.value), advantage
-
-            _, advantages = jax.lax.scan(
-                calculate_gae,
-                (jnp.zeros_like(last_value), last_value),
-                trajectory,
-                reverse=True,
-            )
-            targets = advantages + trajectory.value
-
-            flat_trajectory = jax.tree.map(
-                lambda value: value.reshape((config.batch_size,) + value.shape[2:]), trajectory
-            )
-            flat_advantages = advantages.reshape(config.batch_size)
-            flat_targets = targets.reshape(config.batch_size)
-
-            def update_epoch(update_state, _):
-                train_state, key = update_state
-                key, permutation_key = jax.random.split(key)
-                permutation = jax.random.permutation(permutation_key, config.batch_size)
-                shuffled = (
-                    jax.tree.map(lambda value: value[permutation], flat_trajectory),
-                    flat_advantages[permutation],
-                    flat_targets[permutation],
-                )
-                minibatches = jax.tree.map(
-                    lambda value: value.reshape(
-                        (config.num_minibatches, minibatch_size) + value.shape[1:]
-                    ),
-                    shuffled,
-                )
-
-                def update_minibatch(train_state, batch):
-                    batch_trajectory, batch_advantages, batch_targets = batch
-
-                    def loss_function(parameters):
-                        mean, log_std, value = model.apply(parameters, batch_trajectory.observation)
-                        log_probability = squashed_log_probability(
-                            mean, log_std, batch_trajectory.action
-                        )
-                        value_clipped = batch_trajectory.value + jnp.clip(
-                            value - batch_trajectory.value,
-                            -config.clip_epsilon,
-                            config.clip_epsilon,
-                        )
-                        value_loss = (
-                            0.5
-                            * jnp.maximum(
-                                jnp.square(value - batch_targets),
-                                jnp.square(value_clipped - batch_targets),
-                            ).mean()
-                        )
-                        normalized_advantage = (batch_advantages - batch_advantages.mean()) / (
-                            batch_advantages.std() + 1e-8
-                        )
-                        ratio = jnp.exp(log_probability - batch_trajectory.log_probability)
-                        unclipped_actor_loss = -ratio * normalized_advantage
-                        clipped_actor_loss = (
-                            -jnp.clip(
-                                ratio,
-                                1.0 - config.clip_epsilon,
-                                1.0 + config.clip_epsilon,
-                            )
-                            * normalized_advantage
-                        )
-                        actor_loss = jnp.maximum(unclipped_actor_loss, clipped_actor_loss).mean()
-                        entropy_estimate = -log_probability.mean()
-                        total_loss = (
-                            actor_loss
-                            + config.value_coefficient * value_loss
-                            - config.entropy_coefficient * entropy_estimate
-                        )
-                        return total_loss
-
-                    loss, gradients = jax.value_and_grad(loss_function)(train_state.params)
-                    return train_state.apply_gradients(grads=gradients), loss
-
-                train_state, losses = jax.lax.scan(update_minibatch, train_state, minibatches)
-                return (train_state, key), losses.mean()
-
-            (train_state, key), epoch_losses = jax.lax.scan(
-                update_epoch,
-                (train_state, key),
-                None,
-                length=config.update_epochs,
-            )
-            completed_episodes = trajectory.returned_episode.sum()
-            completed_return_sum = trajectory.returned_episode_return.sum()
-            metrics = UpdateMetrics(
-                loss=epoch_losses.mean(),
-                mean_reward=trajectory.reward.mean(),
-                completed_laps=trajectory.lap_complete.sum(),
-                completed_episodes=completed_episodes,
-                mean_completed_return=completed_return_sum / jnp.maximum(completed_episodes, 1),
+            transition = Transition(
+                done=done,
+                action=action,
+                value=value,
+                reward=reward,
+                log_probability=log_probability,
+                observation=observation,
+                lap_complete=info["lap_complete"],
+                returned_episode=info["returned_episode"],
+                returned_episode_return=info["returned_episode_return"],
+                returned_episode_length=info["returned_episode_length"],
+                off_track=info["off_track"],
+                time_limit=info["time_limit"],
             )
             return (
                 train_state,
                 environment_state,
-                last_observation,
+                next_observation,
                 key,
-            ), metrics
+            ), transition
 
-        runner_state, metrics = jax.lax.scan(update_step, runner_state, None, length=num_updates)
-        train_state, environment_state, final_observation, _ = runner_state
-        return TrainOutput(
+        rollout_state = (
+            runner_state.train_state,
+            runner_state.environment_state,
+            runner_state.observation,
+            runner_state.key,
+        )
+        rollout_state, trajectory = jax.lax.scan(
+            environment_step, rollout_state, None, length=config.num_steps
+        )
+        train_state, environment_state, last_observation, key = rollout_state
+        last_network_output: Any = model.apply(train_state.params, last_observation)
+        last_value = jnp.asarray(last_network_output[2])
+
+        def calculate_gae(carry, transition):
+            advantage, next_value = carry
+            not_done = 1.0 - transition.done.astype(jnp.float32)
+            delta = transition.reward + config.gamma * next_value * not_done - transition.value
+            advantage = delta + config.gamma * config.gae_lambda * not_done * advantage
+            return (advantage, transition.value), advantage
+
+        gae_scan: Any = jax.lax.scan
+        _, advantages = gae_scan(
+            calculate_gae,
+            (jnp.zeros_like(last_value), last_value),
+            trajectory,
+            reverse=True,
+        )
+        targets = advantages + trajectory.value
+
+        flat_trajectory = jax.tree.map(
+            lambda value: value.reshape((config.batch_size,) + value.shape[2:]), trajectory
+        )
+        flat_advantages = advantages.reshape(config.batch_size)
+        flat_targets = targets.reshape(config.batch_size)
+
+        def update_epoch(update_state, _):
+            train_state, key = update_state
+            key, permutation_key = jax.random.split(key)
+            permutation = jax.random.permutation(permutation_key, config.batch_size)
+            shuffled = (
+                jax.tree.map(lambda value: value[permutation], flat_trajectory),
+                flat_advantages[permutation],
+                flat_targets[permutation],
+            )
+            minibatches = jax.tree.map(
+                lambda value: value.reshape(
+                    (config.num_minibatches, minibatch_size) + value.shape[1:]
+                ),
+                shuffled,
+            )
+
+            def update_minibatch(train_state, batch):
+                batch_trajectory, batch_advantages, batch_targets = batch
+
+                def loss_function(parameters):
+                    mean, log_std, value = model.apply(parameters, batch_trajectory.observation)
+                    log_probability = squashed_log_probability(
+                        mean, log_std, batch_trajectory.action
+                    )
+                    value_clipped = batch_trajectory.value + jnp.clip(
+                        value - batch_trajectory.value,
+                        -config.clip_epsilon,
+                        config.clip_epsilon,
+                    )
+                    value_loss = (
+                        0.5
+                        * jnp.maximum(
+                            jnp.square(value - batch_targets),
+                            jnp.square(value_clipped - batch_targets),
+                        ).mean()
+                    )
+                    normalized_advantage = (batch_advantages - batch_advantages.mean()) / (
+                        batch_advantages.std() + 1e-8
+                    )
+                    ratio = jnp.exp(log_probability - batch_trajectory.log_probability)
+                    unclipped_actor_loss = -ratio * normalized_advantage
+                    clipped_actor_loss = (
+                        -jnp.clip(
+                            ratio,
+                            1.0 - config.clip_epsilon,
+                            1.0 + config.clip_epsilon,
+                        )
+                        * normalized_advantage
+                    )
+                    actor_loss = jnp.maximum(unclipped_actor_loss, clipped_actor_loss).mean()
+                    entropy_estimate = -log_probability.mean()
+                    log_ratio = log_probability - batch_trajectory.log_probability
+                    approximate_kl = ((jnp.exp(log_ratio) - 1.0) - log_ratio).mean()
+                    clip_fraction = (
+                        (jnp.abs(ratio - 1.0) > config.clip_epsilon).astype(jnp.float32).mean()
+                    )
+                    total_loss = (
+                        actor_loss
+                        + config.value_coefficient * value_loss
+                        - config.entropy_coefficient * entropy_estimate
+                    )
+                    return total_loss, (
+                        actor_loss,
+                        value_loss,
+                        entropy_estimate,
+                        approximate_kl,
+                        clip_fraction,
+                    )
+
+                (loss, diagnostics), gradients = jax.value_and_grad(loss_function, has_aux=True)(
+                    train_state.params
+                )
+                gradient_norm = optax.tree.norm(gradients)
+                return train_state.apply_gradients(grads=gradients), (
+                    loss,
+                    *diagnostics,
+                    gradient_norm,
+                )
+
+            train_state, diagnostics = jax.lax.scan(update_minibatch, train_state, minibatches)
+            return (train_state, key), jax.tree.map(jnp.mean, diagnostics)
+
+        current_learning_rate = (
+            learning_rate_schedule(jnp.asarray(train_state.step))
+            if config.anneal_learning_rate
+            else jnp.asarray(config.learning_rate, dtype=jnp.float32)
+        )
+        (train_state, key), epoch_diagnostics = jax.lax.scan(
+            update_epoch,
+            (train_state, key),
+            None,
+            length=config.update_epochs,
+        )
+        completed_episodes = trajectory.returned_episode.sum()
+        completed_return_sum = trajectory.returned_episode_return.sum()
+        completed_return_squared_sum = jnp.square(trajectory.returned_episode_return).sum()
+        completed_length_sum = trajectory.returned_episode_length.sum()
+        target_variance = flat_targets.var()
+        explained_variance = jnp.where(
+            target_variance > 1e-8,
+            1.0 - (flat_targets - flat_trajectory.value).var() / target_variance,
+            jnp.nan,
+        )
+        metrics = UpdateMetrics(
+            loss=epoch_diagnostics[0].mean(),
+            policy_loss=epoch_diagnostics[1].mean(),
+            value_loss=epoch_diagnostics[2].mean(),
+            entropy=epoch_diagnostics[3].mean(),
+            approx_kl=epoch_diagnostics[4].mean(),
+            clip_fraction=epoch_diagnostics[5].mean(),
+            gradient_norm=epoch_diagnostics[6].mean(),
+            explained_variance=explained_variance,
+            learning_rate=current_learning_rate,
+            mean_reward=trajectory.reward.mean(),
+            completed_laps=trajectory.lap_complete.sum(),
+            completed_episodes=completed_episodes,
+            mean_completed_return=jnp.where(
+                completed_episodes > 0,
+                completed_return_sum / completed_episodes,
+                jnp.nan,
+            ),
+            completed_return_sum=completed_return_sum,
+            completed_return_squared_sum=completed_return_squared_sum,
+            mean_completed_length=jnp.where(
+                completed_episodes > 0,
+                completed_length_sum / completed_episodes,
+                jnp.nan,
+            ),
+            completed_length_sum=completed_length_sum,
+            off_track_episodes=trajectory.off_track.sum(),
+            time_limit_episodes=trajectory.time_limit.sum(),
+        )
+        return TrainingRunnerState(
             train_state=train_state,
             environment_state=environment_state,
-            final_observation=final_observation,
-            metrics=metrics,
+            observation=last_observation,
+            key=key,
+            update_index=runner_state.update_index + 1,
+        ), metrics
+
+    def make_chunk(chunk_updates: int):
+        if chunk_updates < 1:
+            raise ValueError("chunk_updates must be positive")
+
+        def train_chunk(runner_state: TrainingRunnerState) -> TrainingChunkOutput:
+            runner_state, metrics = jax.lax.scan(
+                update_step, runner_state, None, length=chunk_updates
+            )
+            return TrainingChunkOutput(runner_state=runner_state, metrics=metrics)
+
+        return train_chunk
+
+    return initialize, make_chunk
+
+
+def make_train(
+    env: RacingEnv,
+    env_params: RacingEnvParams,
+    config: PPOConfig,
+):
+    """Build a pure full-run training function suitable for one outer ``jax.jit``."""
+
+    initialize, make_chunk = make_training_fns(env, env_params, config)
+    train_chunk = make_chunk(config.num_updates)
+
+    def train(key: jax.Array) -> TrainOutput:
+        output = train_chunk(initialize(key))
+        runner_state = output.runner_state
+        return TrainOutput(
+            train_state=runner_state.train_state,
+            environment_state=runner_state.environment_state,
+            final_observation=runner_state.observation,
+            metrics=output.metrics,
         )
 
     return train
@@ -373,6 +502,19 @@ def save_checkpoint(
     path = Path(directory)
     path.mkdir(parents=True, exist_ok=True)
     (path / "params.msgpack").write_bytes(serialization.to_bytes(params))
+    save_checkpoint_metadata(path, config, summary)
+    return path
+
+
+def save_checkpoint_metadata(
+    directory: str | Path,
+    config: PPOConfig,
+    summary: dict[str, Any],
+) -> Path:
+    """Write checkpoint metadata without serializing model parameters again."""
+
+    path = Path(directory)
+    path.mkdir(parents=True, exist_ok=True)
     metadata = {"ppo": asdict(config), "summary": summary}
     (path / "metadata.json").write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
     return path
