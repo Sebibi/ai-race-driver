@@ -1,6 +1,7 @@
 """Tests for reusable process-environment setup."""
 
 import logging
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,20 @@ import pytest
 from ai_race_driver import configuration
 
 REQUIRED_VARIABLES = ("WANDB_API_KEY", "WANDB_PROJECT", "WANDB_ENTITY")
+
+
+@pytest.fixture(autouse=True)
+def _restore_wandb_environment() -> Iterator[None]:
+    tracked_variables = (*REQUIRED_VARIABLES, "WANDB_NAME", "WANDB_MODE")
+    original_values = {
+        variable: configuration.os.environ.get(variable) for variable in tracked_variables
+    }
+    yield
+    for variable, value in original_values.items():
+        if value is None:
+            configuration.os.environ.pop(variable, None)
+        else:
+            configuration.os.environ[variable] = value
 
 
 def _clear_required_variables(monkeypatch: Any) -> None:

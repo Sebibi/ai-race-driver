@@ -1,22 +1,15 @@
-"""Opt-in online W&B acceptance test."""
+"""Online W&B acceptance test."""
 
 import os
 
-import pytest
 import wandb
 
 from ai_race_driver.configuration import setup_environment
 from ai_race_driver.metadata import get_git_metadata, make_wandb_run_name
 
 
-@pytest.mark.wandb_online
-@pytest.mark.skipif(
-    os.environ.get("AI_RACE_RUN_WANDB_ONLINE") != "1",
-    reason="set AI_RACE_RUN_WANDB_ONLINE=1 to create and verify an online W&B run",
-)
-def test_wandb_run_is_uploaded_to_portal(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_wandb_run_is_uploaded_to_portal() -> None:
     setup_environment()
-    monkeypatch.setenv("WANDB_MODE", "online")
     git_metadata = get_git_metadata()
     run_name = make_wandb_run_name(git_metadata)
 

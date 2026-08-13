@@ -128,8 +128,8 @@ uv run ai-race-benchmark --num-envs 2048 --num-steps 1000
 # Expensive convergence acceptance: three seeds must finish a fixed-start oval lap
 AI_RACE_RUN_SLOW=1 uv run pytest -m slow
 
-# Creates and verifies a real W&B portal run using environment credentials
-AI_RACE_RUN_WANDB_ONLINE=1 uv run pytest -m wandb_online -s
+# The default suite creates and verifies a real W&B portal run
+uv run pytest
 ```
 
 ## Pre-PR verification
