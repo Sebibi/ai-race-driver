@@ -80,7 +80,8 @@ AI_RACE_RUN_SLOW=1 uv run pytest -m slow
 ```
 
 The online W&B acceptance test creates a real portal run, verifies its uploaded metric and Git
-metadata through the W&B API, and prints the run URL:
+metadata through the W&B API, and prints the run URL. Its run name combines the current branch
+and commit message in normalized lowercase `snake_case` form:
 
 ```bash
 AI_RACE_RUN_WANDB_ONLINE=1 uv run pytest -m wandb_online -s

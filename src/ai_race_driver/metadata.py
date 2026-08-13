@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -38,3 +39,11 @@ def get_git_metadata(repository: str | Path = ".") -> dict[str, str]:
             "git_commit_message": "unknown",
             "git_commit_hash": "unknown",
         }
+
+
+def make_wandb_run_name(git_metadata: dict[str, str]) -> str:
+    """Build a normalized W&B run name from the branch and commit message."""
+
+    source_name = f"{git_metadata['git_branch']}_{git_metadata['git_commit_message']}"
+    normalized_name = re.sub(r"[^a-z0-9]+", "_", source_name.lower())
+    return normalized_name.strip("_")

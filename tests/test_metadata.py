@@ -44,3 +44,15 @@ def test_get_git_metadata_falls_back_when_git_is_unavailable(monkeypatch: Any) -
         "git_commit_message": "unknown",
         "git_commit_hash": "unknown",
     }
+
+
+def test_make_wandb_run_name_normalizes_branch_and_commit() -> None:
+    run_name = metadata.make_wandb_run_name(
+        {
+            "git_branch": "Feature/W&B Test",
+            "git_commit_message": "Add Online   Run!",
+            "git_commit_hash": "abc123",
+        }
+    )
+
+    assert run_name == "feature_w_b_test_add_online_run"
