@@ -33,11 +33,14 @@ uv run ai-race-train --num-envs 8 --num-steps 8 --total-timesteps 128
 # Accelerator-oriented defaults
 uv run ai-race-train --output artifacts/oval-seed-0
 
-# Log hyperparameters, per-update metrics, and the final summary to W&B
-uv run ai-race-train --output artifacts/oval-seed-0
+# Live metrics every PPO update, with evaluation at the same cadence
+uv run ai-race-train --log-every-updates 1 --output artifacts/oval-seed-0
+
+# Higher-throughput default: four compiled PPO updates between host synchronizations
+uv run ai-race-train --log-every-updates 4 --eval-episodes 32
 
 # Deterministic fixed-start evaluation
-uv run ai-race-eval artifacts/oval-seed-0 --episodes 3
+uv run ai-race-eval --checkpoint artifacts/oval-seed-0 --episodes 3
 
 # Environment throughput; add --ppo for full training throughput
 uv run ai-race-benchmark --num-envs 2048 --num-steps 1000 --output artifacts/benchmark.json
@@ -54,12 +57,26 @@ variables take precedence. Training exits with a clear error if required values 
 missing. Generated W&B state is kept under the ignored `wandb/` directory.
 Every W&B run records the current Git branch, commit message, and commit hash in its config.
 
+Training executes static groups of PPO updates in compiled `lax.scan` chunks. The
+`--log-every-updates` option controls both the chunk size and live console/W&B/evaluation
+cadence; larger values reduce synchronization overhead. W&B still receives one training point
+per PPO update after each chunk. At step zero and every chunk boundary, the deterministic policy
+is evaluated once from the canonical fixed start and over a reproducible vectorized batch of
+randomized starts controlled by `--eval-episodes` and `--eval-seed`. The final policy is saved at
+the requested output path and the best fixed-start policy is saved below its `best/` directory.
+
+Training episode metrics describe the stochastic policy and randomized resets used to collect
+PPO rollouts. `eval/fixed/*` describes the canonical deterministic deployment trajectory, while
+`eval/randomized/*` measures deterministic-policy robustness across starting states. Optimizer
+loss, approximate KL, clipping fraction, entropy, explained variance, learning rate, throughput,
+and evaluation time are logged as diagnostics rather than treated as policy performance.
+
 ## Architecture
 
 - `track`: fits closed periodic cubic splines on the host and returns fixed-shape `TrackData` PyTrees. Centerline queries, projection, curvature preview, and boundary checks are device-side JAX.
 - `vehicle`: exposes a pure `VehicleModel` contract. `PointMassModel` implements bounded acceleration and yaw-rate controls with semi-implicit integration.
 - `envs`: provides the Gymnax-compatible `RacingEnv`. Its 14-value ego observation contains normalized speed/lateral error, heading-error sine/cosine, previous action, and eight curvature previews.
-- `training`: contains a fully scanned PPO pipeline using a tanh-squashed Gaussian policy, GAE, clipped objectives, Flax, Optax, and explicit PRNG keys.
+- `training`: contains resumable compiled PPO chunks and deterministic evaluation scans using a tanh-squashed Gaussian policy, GAE, clipped objectives, Flax, Optax, and explicit PRNG keys.
 - `configuration`: validates required process variables and falls back to `.env` for local runs.
 - `cli`: training, checkpoint evaluation, and reproducible benchmark entry points.
 

@@ -15,7 +15,8 @@ The implemented vertical slice includes:
 - An in-repository continuous-action PPO trainer using Flax, Optax, Distrax, `vmap`, and
   nested `lax.scan` loops.
 - Checkpoint save/load, deterministic evaluation, synchronized throughput benchmarks,
-  CPU CI, and an opt-in three-seed learning acceptance test.
+  live chunked progress logging, periodic fixed/randomized evaluation, CPU CI, and an opt-in
+  three-seed learning acceptance test.
 
 ## Repository map
 
@@ -68,7 +69,9 @@ then export it only when it is part of the supported public API.
    computes a 14-element ego observation and shaped progress reward, and detects off-track,
    lap-complete, or time-limit termination.
 5. `make_train` vectorizes environments with `vmap` and scans both rollouts and PPO updates.
-   The outer caller applies one `jax.jit`; do not insert host work into this compiled path.
+   The training CLI uses the same update scan in resumable compiled chunks, keeping runner state
+   on-device while console/W&B logging, evaluation, and checkpoints run at host boundaries. Do
+   not insert callbacks or other host work into a compiled chunk.
 6. Training serializes Flax parameters plus JSON configuration/metrics. Evaluation rebuilds
    the same network shape, restores parameters, and uses `tanh(mean)` deterministically.
 
@@ -116,11 +119,14 @@ uv run pytest
 # Small end-to-end training/checkpoint smoke run
 uv run ai-race-train --num-envs 8 --num-steps 8 --total-timesteps 128
 
+# Select compiled chunk and live evaluation/logging cadence in PPO updates
+uv run ai-race-train --log-every-updates 4 --eval-episodes 32
+
 # W&B experiment tracking uses required environment variables or the local .env
 uv run ai-race-train
 
 # Deterministic checkpoint evaluation
-uv run ai-race-eval artifacts/latest --episodes 3
+uv run ai-race-eval --checkpoint artifacts/latest --episodes 3
 
 # Synchronized environment benchmark; add --ppo for trainer throughput
 uv run ai-race-benchmark --num-envs 2048 --num-steps 1000

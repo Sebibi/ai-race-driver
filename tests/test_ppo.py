@@ -6,11 +6,13 @@ import pytest
 
 from ai_race_driver.envs.racing import RacingEnv, RacingEnvParams
 from ai_race_driver.track.spline import make_oval_track
+from ai_race_driver.training.evaluation import make_evaluate_policy
 from ai_race_driver.training.ppo import (
     ActorCritic,
     PPOConfig,
     deterministic_action,
     make_train,
+    make_training_fns,
 )
 
 
@@ -27,6 +29,63 @@ def test_ppo_smoke_updates_parameters_with_finite_metrics() -> None:
     assert bool(jnp.all(jnp.isfinite(output.metrics.loss)))
     assert bool(jnp.all(jnp.isfinite(output.metrics.mean_reward)))
     assert output.final_observation.shape == (config.num_envs, 14)
+
+
+def test_chunked_training_matches_full_run() -> None:
+    params = RacingEnvParams(track=make_oval_track(samples=64), max_steps_in_episode=32)
+    env = RacingEnv(params)
+    config = PPOConfig.cpu_smoke()
+    key = jax.random.key(7)
+
+    full_output = jax.jit(make_train(env, params, config))(key)
+    initialize, make_chunk = make_training_fns(env, params, config)
+    runner_state = jax.jit(initialize)(key)
+    first_chunk = jax.jit(make_chunk(1))(runner_state)
+    second_chunk = jax.jit(make_chunk(1))(first_chunk.runner_state)
+
+    assert int(second_chunk.runner_state.update_index) == config.num_updates
+    parameter_matches = jax.tree.leaves(
+        jax.tree.map(
+            lambda chunked, full: jnp.allclose(chunked, full, equal_nan=True),
+            second_chunk.runner_state.train_state.params,
+            full_output.train_state.params,
+        )
+    )
+    assert all(bool(matches) for matches in parameter_matches)
+    chunked_metrics = jax.tree.map(
+        lambda first, second: jnp.concatenate((first, second)),
+        first_chunk.metrics,
+        second_chunk.metrics,
+    )
+    metric_matches = jax.tree.leaves(
+        jax.tree.map(
+            lambda chunked, full: jnp.allclose(chunked, full, equal_nan=True),
+            chunked_metrics,
+            full_output.metrics,
+        )
+    )
+    assert all(bool(matches) for matches in metric_matches)
+
+
+def test_compiled_evaluation_is_reproducible_for_fixed_seed() -> None:
+    params = RacingEnvParams(track=make_oval_track(samples=64), max_steps_in_episode=32)
+    env = RacingEnv(params)
+    model = ActorCritic(action_dim=2, hidden_size=32)
+    observation, _ = env.reset(jax.random.key(0), params)
+    model_params = model.init(jax.random.key(1), observation)
+    evaluate = jax.jit(make_evaluate_policy(env, params, model, randomized_episodes=4))
+
+    first = evaluate(model_params, jax.random.key(2))
+    second = evaluate(model_params, jax.random.key(2))
+
+    matches = jax.tree.leaves(
+        jax.tree.map(lambda left, right: jnp.array_equal(left, right), first, second)
+    )
+    assert all(bool(match) for match in matches)
+    assert float(first.fixed.return_std) == 0.0
+    assert 0.0 <= float(first.randomized.lap_success_rate) <= 1.0
+    assert 0.0 <= float(first.randomized.off_track_rate) <= 1.0
+    assert 0.0 <= float(first.randomized.time_limit_rate) <= 1.0
 
 
 @pytest.mark.slow
