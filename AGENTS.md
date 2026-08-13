@@ -30,6 +30,7 @@ The implemented vertical slice includes:
 │   ├── AGENTS.md                     # JAX-specific implementation constraints
 │   ├── __init__.py                   # Supported top-level public exports
 │   ├── configuration.py              # Environment validation and dotenv fallback
+│   ├── metadata.py                   # Host-side Git metadata for experiment tracking
 │   ├── py.typed                      # Typed-package marker
 │   ├── vehicle/
 │   │   ├── base.py                   # Generic pure `VehicleModel` protocol
@@ -126,6 +127,9 @@ uv run ai-race-benchmark --num-envs 2048 --num-steps 1000
 
 # Expensive convergence acceptance: three seeds must finish a fixed-start oval lap
 AI_RACE_RUN_SLOW=1 uv run pytest -m slow
+
+# Creates and verifies a real W&B portal run using environment credentials
+AI_RACE_RUN_WANDB_ONLINE=1 uv run pytest -m wandb_online -s
 ```
 
 ## Pre-PR verification

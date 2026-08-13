@@ -13,6 +13,7 @@ import wandb
 from ai_race_driver.configuration import setup_environment
 from ai_race_driver.envs.racing import make_default_env
 from ai_race_driver.logging import LOG_LEVELS, configure_logging
+from ai_race_driver.metadata import get_git_metadata
 from ai_race_driver.training.ppo import PPOConfig, make_train, save_checkpoint
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ def log_wandb_run(
     """Log completed device-side training metrics from the host."""
 
     host_metrics = jax.device_get(metrics)
-    with wandb.init(config={"seed": seed, **asdict(config)}) as run:
+    with wandb.init(config={"seed": seed, **asdict(config), **get_git_metadata()}) as run:
         for update_index in range(config.num_updates):
             run.log(
                 {

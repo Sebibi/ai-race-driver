@@ -41,6 +41,7 @@ packages = ["src/ai_race_driver"]
 addopts = "-q"
 markers = [
     "slow: longer-running learning acceptance tests",
+    "wandb_online: creates and verifies a real run in the configured W&B project",
 ]
 testpaths = ["tests"]
 

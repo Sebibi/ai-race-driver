@@ -41,6 +41,15 @@ def test_log_wandb_run_records_each_ppo_update(monkeypatch: Any) -> None:
         return run
 
     monkeypatch.setattr(train.wandb, "init", fake_init)
+    monkeypatch.setattr(
+        train,
+        "get_git_metadata",
+        lambda: {
+            "git_branch": "feature/test",
+            "git_commit_message": "Test W&B logging",
+            "git_commit_hash": "abc123",
+        },
+    )
 
     train.log_wandb_run(
         config=config,
@@ -51,6 +60,9 @@ def test_log_wandb_run_records_each_ppo_update(monkeypatch: Any) -> None:
 
     assert init_arguments["config"]["seed"] == 7
     assert init_arguments["config"]["num_envs"] == config.num_envs
+    assert init_arguments["config"]["git_branch"] == "feature/test"
+    assert init_arguments["config"]["git_commit_message"] == "Test W&B logging"
+    assert init_arguments["config"]["git_commit_hash"] == "abc123"
     assert run.finished
     assert run.summary == {"final_loss": 0.5}
     assert [step for _, step in run.history] == [1, 2]

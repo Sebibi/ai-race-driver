@@ -52,6 +52,7 @@ The reusable `setup_environment` helper first uses variables exported by the pro
 example, an HPC scheduler), then loads missing values from `.env` with `python-dotenv`. Exported
 variables take precedence. Training exits with a clear error if required values are still
 missing. Generated W&B state is kept under the ignored `wandb/` directory.
+Every W&B run records the current Git branch, commit message, and commit hash in its config.
 
 ## Architecture
 
@@ -76,4 +77,11 @@ The longer learning acceptance test is opt-in:
 
 ```bash
 AI_RACE_RUN_SLOW=1 uv run pytest -m slow
+```
+
+The online W&B acceptance test creates a real portal run, verifies its uploaded metric and Git
+metadata through the W&B API, and prints the run URL:
+
+```bash
+AI_RACE_RUN_WANDB_ONLINE=1 uv run pytest -m wandb_online -s
 ```
