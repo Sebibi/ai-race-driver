@@ -33,6 +33,9 @@ uv run ai-race-train --num-envs 8 --num-steps 8 --total-timesteps 128
 # Accelerator-oriented defaults
 uv run ai-race-train --output artifacts/oval-seed-0
 
+# Log hyperparameters, per-update metrics, and the final summary to W&B
+uv run ai-race-train --output artifacts/oval-seed-0
+
 # Deterministic fixed-start evaluation
 uv run ai-race-eval artifacts/oval-seed-0 --episodes 3
 
@@ -43,6 +46,13 @@ uv run ai-race-benchmark --num-envs 2048 --num-steps 1000 --output artifacts/ben
 Benchmark output separates compilation time from steady-state execution and calls `block_until_ready()` before timing completes.
 All commands write color-coded logs to stderr when attached to a terminal. Pass `--log-level`
 with `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` to control their verbosity.
+W&B configuration is environment-only. Training requires non-empty `WANDB_API_KEY`,
+`WANDB_PROJECT`, and `WANDB_ENTITY`; `WANDB_NAME` and `WANDB_MODE` remain optional W&B settings.
+The reusable `setup_environment` helper first uses variables exported by the process (for
+example, an HPC scheduler), then loads missing values from `.env` with `python-dotenv`. Exported
+variables take precedence. Training exits with a clear error if required values are still
+missing. Generated W&B state is kept under the ignored `wandb/` directory.
+Every W&B run records the current Git branch, commit message, and commit hash in its config.
 
 ## Architecture
 
@@ -50,6 +60,7 @@ with `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` to control their verbosi
 - `vehicle`: exposes a pure `VehicleModel` contract. `PointMassModel` implements bounded acceleration and yaw-rate controls with semi-implicit integration.
 - `envs`: provides the Gymnax-compatible `RacingEnv`. Its 14-value ego observation contains normalized speed/lateral error, heading-error sine/cosine, previous action, and eight curvature previews.
 - `training`: contains a fully scanned PPO pipeline using a tanh-squashed Gaussian policy, GAE, clipped objectives, Flax, Optax, and explicit PRNG keys.
+- `configuration`: validates required process variables and falls back to `.env` for local runs.
 - `cli`: training, checkpoint evaluation, and reproducible benchmark entry points.
 
 Tracks use SI units and a constant full width. Training resets randomize the location and pose; evaluation starts at the centerline start. Episodes finish after a forward lap, an off-track departure, or the time limit.
@@ -66,4 +77,13 @@ The longer learning acceptance test is opt-in:
 
 ```bash
 AI_RACE_RUN_SLOW=1 uv run pytest -m slow
+```
+
+The default test suite includes an online W&B acceptance test that creates a real portal run,
+verifies its uploaded metric and Git metadata through the W&B API, and prints the run URL. Its
+run name combines the current branch and commit message in normalized lowercase `snake_case`
+form. It requires the same W&B environment variables as training:
+
+```bash
+uv run pytest -s
 ```

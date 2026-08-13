@@ -29,6 +29,8 @@ The implemented vertical slice includes:
 ├── src/ai_race_driver/
 │   ├── AGENTS.md                     # JAX-specific implementation constraints
 │   ├── __init__.py                   # Supported top-level public exports
+│   ├── configuration.py              # Environment validation and dotenv fallback
+│   ├── metadata.py                   # Host-side Git metadata for experiment tracking
 │   ├── py.typed                      # Typed-package marker
 │   ├── vehicle/
 │   │   ├── base.py                   # Generic pure `VehicleModel` protocol
@@ -114,6 +116,9 @@ uv run pytest
 # Small end-to-end training/checkpoint smoke run
 uv run ai-race-train --num-envs 8 --num-steps 8 --total-timesteps 128
 
+# W&B experiment tracking uses required environment variables or the local .env
+uv run ai-race-train
+
 # Deterministic checkpoint evaluation
 uv run ai-race-eval artifacts/latest --episodes 3
 
@@ -122,7 +127,30 @@ uv run ai-race-benchmark --num-envs 2048 --num-steps 1000
 
 # Expensive convergence acceptance: three seeds must finish a fixed-start oval lap
 AI_RACE_RUN_SLOW=1 uv run pytest -m slow
+
+# The default suite creates and verifies a real W&B portal run
+uv run pytest
 ```
+
+## Pre-PR verification
+
+Before opening or updating a pull request, run every command from
+`.github/workflows/ci.yml` locally, in workflow order, and fix all failures:
+
+```bash
+uv sync --locked
+uv run ruff check .
+uv run mypy
+uv run pytest
+```
+
+Treat the workflow as the source of truth if its commands change. Do not open or update the
+pull request until this local CI sequence passes.
+
+After opening a pull request or pushing new commits to an existing pull request, wait for all
+GitHub checks to finish with `gh pr checks --watch`. If any check fails, inspect its Actions
+logs, fix the underlying issue, rerun the local CI sequence, push the fix, and watch the new
+checks. Do not report the pull request as ready while checks are pending or failing.
 
 ## Verification by change type
 

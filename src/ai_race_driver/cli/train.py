@@ -3,16 +3,20 @@
 import argparse
 import logging
 import time
+from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
 import jax
+import wandb
 
+from ai_race_driver.configuration import setup_environment
 from ai_race_driver.envs.racing import make_default_env
 from ai_race_driver.logging import LOG_LEVELS, configure_logging
+from ai_race_driver.metadata import get_git_metadata
 from ai_race_driver.training.ppo import PPOConfig, make_train, save_checkpoint
 
 logger = logging.getLogger(__name__)
-
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -25,9 +29,35 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def log_wandb_run(
+    *,
+    config: PPOConfig,
+    seed: int,
+    metrics: Any,
+    summary: dict[str, Any],
+) -> None:
+    """Log completed device-side training metrics from the host."""
+
+    host_metrics = jax.device_get(metrics)
+    with wandb.init(config={"seed": seed, **asdict(config), **get_git_metadata()}) as run:
+        for update_index in range(config.num_updates):
+            run.log(
+                {
+                    "train/timesteps": (update_index + 1) * config.batch_size,
+                    **{
+                        f"train/{metric_name}": float(metric_values[update_index])
+                        for metric_name, metric_values in host_metrics._asdict().items()
+                    },
+                },
+                step=update_index + 1,
+            )
+        run.summary.update(summary)
+
+
 def main() -> None:
     args = build_parser().parse_args()
     configure_logging(args.log_level, entrypoint_logger=logger)
+    setup_environment()
     logger.info("JAX devices: %s", jax.devices())
     config = PPOConfig(
         total_timesteps=args.total_timesteps,
@@ -59,6 +89,13 @@ def main() -> None:
     }
     save_checkpoint(args.output, output.train_state.params, config, summary)
     logger.info("Saved checkpoint to %s", args.output)
+    log_wandb_run(
+        config=config,
+        seed=args.seed,
+        metrics=output.metrics,
+        summary=summary,
+    )
+    logger.info("Logged training metrics to W&B")
     for name, value in summary.items():
         logger.info("%s: %s", name, value)
 
