@@ -20,7 +20,7 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run mypy
-      - run: uv run pytest
+      - run: uv run pytest -s -v --tb=short
         env:
           WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
           WANDB_ENTITY: ${{ secrets.WANDB_ENTITY }}
