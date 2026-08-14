@@ -251,10 +251,11 @@ def _make_plots(telemetry: EpisodeTelemetry, track: TrackGeometry, width: int) -
     x0 = width - 394
     x1 = width - 24
     rectangles = (
-        (x0, 74, x1, 205),
-        (x0, 230, x1, 361),
-        (x0, 386, x1, 517),
-        (x0, 542, x1, 673),
+        (x0, 74, x1, 174),
+        (x0, 193, x1, 293),
+        (x0, 312, x1, 412),
+        (x0, 431, x1, 531),
+        (x0, 550, x1, 650),
     )
     speed_max = max(float(np.max(telemetry.speed)) * 1.08, 1.0)
     accel_min, accel_max = _symmetric_range(
@@ -266,6 +267,8 @@ def _make_plots(telemetry: EpisodeTelemetry, track: TrackGeometry, width: int) -
         telemetry.lateral_error,
         minimum_span=0.5 * track.width,
     )
+    reward_by_state = np.concatenate((np.zeros(1, dtype=np.float32), telemetry.reward))
+    reward_min, reward_max = _symmetric_range(reward_by_state, minimum_span=0.1)
     return (
         _Plot(
             "Speed v [m/s]",
@@ -297,6 +300,13 @@ def _make_plots(telemetry: EpisodeTelemetry, track: TrackGeometry, width: int) -
             (_PlotSeries("error", telemetry.lateral_error, (184, 133, 255)),),
             lateral_min,
             lateral_max,
+        ),
+        _Plot(
+            "Reward",
+            rectangles[4],
+            (_PlotSeries("reward", reward_by_state, (246, 211, 101)),),
+            reward_min,
+            reward_max,
         ),
     )
 
