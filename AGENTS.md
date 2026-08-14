@@ -151,6 +151,20 @@ uv run pytest
 
 ## Pre-PR verification
 
+Before opening or updating a pull request, fetch and merge the latest `origin/master` into the
+feature branch:
+
+```bash
+git fetch origin master
+git merge --no-edit origin/master
+git diff --name-only --diff-filter=U
+```
+
+Resolve every merge conflict before continuing. The final command must produce no output; inspect
+the merged diff and do not open or update the pull request while any unmerged paths remain. Run
+the local validation sequence below after the merge so it verifies the exact state proposed for
+the pull request.
+
 Before opening or updating a pull request, run every command from the pull-request validation
 job in `.github/workflows/ci.yml` locally, in workflow order, and fix all failures:
 
