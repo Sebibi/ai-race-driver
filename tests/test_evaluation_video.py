@@ -110,7 +110,7 @@ def test_every_plot_has_formatted_y_axis_ticks() -> None:
 
     plots = _make_plots(request.telemetry, request.track, request.width)
 
-    assert len(plots) == 4
+    assert len(plots) == 5
     for plot in plots:
         ticks = _y_axis_ticks(plot)
         assert tuple(fraction for fraction, _ in ticks) == (0.0, 0.5, 1.0)
@@ -118,6 +118,16 @@ def test_every_plot_has_formatted_y_axis_ticks() -> None:
             (plot.maximum, 0.5 * (plot.minimum + plot.maximum), plot.minimum)
         )
         assert all(_format_axis_value(value, plot.maximum - plot.minimum) for _, value in ticks)
+
+
+def test_reward_plot_aligns_transition_rewards_with_resulting_states() -> None:
+    request = _request(Path("unused.mp4"))
+
+    reward_plot = _make_plots(request.telemetry, request.track, request.width)[-1]
+
+    assert reward_plot.title == "Reward"
+    np.testing.assert_allclose(reward_plot.series[0].values, (0.0, 1.0, 2.0))
+    assert reward_plot.minimum < 0.0 < reward_plot.maximum
 
 
 def test_rendered_mp4_is_decodable(tmp_path: Path) -> None:
