@@ -151,8 +151,8 @@ uv run pytest
 
 ## Pre-PR verification
 
-Before opening or updating a pull request, run every command from
-`.github/workflows/ci.yml` locally, in workflow order, and fix all failures:
+Before opening or updating a pull request, run every command from the pull-request validation
+job in `.github/workflows/ci.yml` locally, in workflow order, and fix all failures:
 
 ```bash
 uv sync --locked
@@ -161,8 +161,9 @@ uv run mypy
 uv run pytest
 ```
 
-Treat the workflow as the source of truth if its commands change. Do not open or update the
-pull request until this local CI sequence passes.
+Treat the validation workflow as the source of truth if its commands change. The merge-only
+`.github/workflows/train-after-merge.yml` performance run is intentionally excluded from
+pre-PR verification. Do not open or update the pull request until this local CI sequence passes.
 
 After opening a pull request or pushing new commits to an existing pull request, wait for all
 GitHub checks to finish with `gh pr checks --watch`. If any check fails, inspect its Actions

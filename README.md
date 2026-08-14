@@ -60,6 +60,11 @@ variables take precedence. Training exits with a clear error if required values 
 missing. Generated W&B state is kept under the ignored `wandb/` directory.
 Every W&B run records the current Git branch, commit message, and commit hash in its config.
 
+After a pull request is merged into `master`, the `Training performance` GitHub Actions
+workflow checks out the exact merge commit, installs the locked dependencies, and runs
+`uv run ai-race-train` without command-line overrides. Its Actions and W&B run names use
+`master@<merge-commit-sha>`, making default-training performance directly traceable over time.
+
 Training executes static groups of PPO updates in compiled `lax.scan` chunks. The
 `--log-every-updates` option controls both the chunk size and live console/W&B/evaluation
 cadence; larger values reduce synchronization overhead. W&B still receives one training point
