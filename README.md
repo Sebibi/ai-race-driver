@@ -94,7 +94,7 @@ and evaluation time are logged as diagnostics rather than treated as policy perf
 ## Architecture
 
 - `track`: fits closed periodic cubic splines on the host and returns fixed-shape `TrackData` PyTrees. Centerline queries, projection, curvature preview, and boundary checks are device-side JAX.
-- `vehicle`: exposes a pure `VehicleModel` contract. `PointMassModel` implements bounded acceleration and yaw-rate controls with semi-implicit integration.
+- `vehicle`: exposes a pure `VehicleModel` contract. `PointMassModel` implements bounded longitudinal and lateral acceleration controls, coupled by a traction ellipse, with semi-implicit integration.
 - `envs`: provides the Gymnax-compatible `RacingEnv`. Its 14-value ego observation contains normalized speed/lateral error, heading-error sine/cosine, previous action, and eight curvature previews.
 - `training`: contains resumable compiled PPO chunks and deterministic evaluation scans using a tanh-squashed Gaussian policy, GAE, clipped objectives, Flax, Optax, and explicit PRNG keys.
 - `visualization`: converts selected deterministic trajectories to host telemetry and renders headless evaluation MP4s without entering the environment or PPO JIT paths.

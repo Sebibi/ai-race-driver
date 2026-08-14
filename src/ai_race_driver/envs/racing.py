@@ -280,7 +280,7 @@ class RacingEnv(environment.Environment[RacingEnvState, RacingEnvParams]):
             obs[0]     : normalized_speed = vehicle_speed / max_speed
             obs[1]     : normalized_lateral_error = lateral_error / half_width
             obs[2:4]   : [sin(heading_error), cos(heading_error)] for smooth angular encoding
-            obs[4:6]   : previous_action (2D: longitudinal, turning)
+            obs[4:6]   : previous_action (2D: longitudinal and lateral acceleration)
             obs[6:14]  : preview_curvature clipped to [-1, 1] at 8 lookahead distances
 
         The observation enables:
@@ -318,7 +318,7 @@ class RacingEnv(environment.Environment[RacingEnvState, RacingEnvParams]):
 
         # Group 2: Action History (2 elements)
         # ====================================
-        # [4-5] Previous 2D action (longitudinal, turn): enables smooth control learning
+        # [4-5] Previous 2D action (longitudinal/lateral acceleration): smooth control feedback
         previous_action = state.previous_action
 
         # Group 3: Track Geometry Lookahead (8 elements)
