@@ -1,5 +1,6 @@
 """Tests for the PPO training command."""
 
+from pathlib import Path
 from typing import Any
 
 import jax.numpy as jnp
@@ -8,6 +9,7 @@ import pytest
 from ai_race_driver.cli import train
 from ai_race_driver.training.evaluation import EvaluationMetrics, EvaluationSuiteMetrics
 from ai_race_driver.training.ppo import PPOConfig, UpdateMetrics
+from ai_race_driver.visualization.video import VideoRenderResult
 
 
 def _update_metrics() -> UpdateMetrics:
@@ -123,6 +125,73 @@ def test_live_tracking_cli_defaults_and_validation() -> None:
     assert args.log_every_updates == 4
     assert args.eval_episodes == 32
     assert args.eval_seed == 0
+    assert args.video_every_evals == 1
     assert not any(name.startswith("wandb_") for name in vars(args))
     with pytest.raises(SystemExit):
         train.build_parser().parse_args(["--log-every-updates", "0"])
+    with pytest.raises(SystemExit):
+        train.build_parser().parse_args(["--video-every-evals", "-1"])
+
+
+@pytest.mark.parametrize(
+    ("evaluation_index", "is_final", "cadence", "expected"),
+    (
+        (0, False, 0, False),
+        (0, False, 3, True),
+        (1, False, 3, False),
+        (3, False, 3, True),
+        (4, True, 3, True),
+        (6, True, 3, True),
+    ),
+)
+def test_video_schedule_includes_initial_periodic_and_final_evaluations(
+    evaluation_index: int,
+    is_final: bool,
+    cadence: int,
+    expected: bool,
+) -> None:
+    assert (
+        train.should_record_video(
+            evaluation_index,
+            is_final=is_final,
+            cadence=cadence,
+        )
+        is expected
+    )
+
+
+def test_completed_video_is_logged_at_its_capture_step(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    result = VideoRenderResult(
+        path=tmp_path / "evaluation.mp4",
+        global_step=128,
+        update=2,
+        frame_count=3,
+        capture_seconds=0.1,
+        render_seconds=0.2,
+    )
+
+    class _Renderer:
+        def collect(self, *, wait: bool) -> VideoRenderResult:
+            assert wait
+            return result
+
+    monkeypatch.setattr(
+        train.wandb,
+        "Video",
+        lambda path, caption, format: {
+            "path": path,
+            "caption": caption,
+            "format": format,
+        },
+    )
+    run = _FakeRun()
+    totals = train._VideoTotals()
+
+    assert train._collect_completed_video(run, _Renderer(), totals, wait=True)
+    assert run.history[-1]["global_step"] == 128
+    assert "eval/fixed/video" in run.history[-1]
+    assert totals.completed == 1
+    assert totals.render_seconds == 0.2

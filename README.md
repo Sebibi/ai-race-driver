@@ -39,6 +39,9 @@ uv run ai-race-train --log-every-updates 1 --output artifacts/oval-seed-0
 # Higher-throughput default: four compiled PPO updates between host synchronizations
 uv run ai-race-train --log-every-updates 4 --eval-episodes 32
 
+# Fixed-start videos at step zero, every fifth evaluation, and the final evaluation
+uv run ai-race-train --video-every-evals 5 --output artifacts/oval-seed-0
+
 # Deterministic fixed-start evaluation
 uv run ai-race-eval --checkpoint artifacts/oval-seed-0 --episodes 3
 
@@ -57,6 +60,11 @@ variables take precedence. Training exits with a clear error if required values 
 missing. Generated W&B state is kept under the ignored `wandb/` directory.
 Every W&B run records the current Git branch, commit message, and commit hash in its config.
 
+After a pull request is merged into `master`, the `Training performance` GitHub Actions
+workflow checks out the exact merge commit, installs the locked dependencies, and runs
+`uv run ai-race-train` without command-line overrides. Its Actions and W&B run names use
+`master@<merge-commit-sha>`, making default-training performance directly traceable over time.
+
 Training executes static groups of PPO updates in compiled `lax.scan` chunks. The
 `--log-every-updates` option controls both the chunk size and live console/W&B/evaluation
 cadence; larger values reduce synchronization overhead. W&B still receives one training point
@@ -64,6 +72,17 @@ per PPO update after each chunk. At step zero and every chunk boundary, the dete
 is evaluated once from the canonical fixed start and over a reproducible vectorized batch of
 randomized starts controlled by `--eval-episodes` and `--eval-seed`. The final policy is saved at
 the requested output path and the best fixed-start policy is saved below its `best/` directory.
+
+Evaluation videos are disabled by default, so normal training has no trajectory capture, device
+transfer, rendering, or media-upload overhead. Setting `--video-every-evals N` records the
+deterministic fixed-start policy at step zero, every Nth evaluation, and the final evaluation.
+The video trajectory is produced by a separate compiled scan and transferred to the host only at
+those boundaries. Pillow draws the track, driven path, heading marker, speed, longitudinal and
+lateral acceleration, yaw rate, and lateral error; PyAV streams at most 300 frames directly into
+an H.264 MP4. A single background worker overlaps rendering with subsequent training. If it is
+still busy when another video is due, training waits rather than dropping the requested video.
+Videos are written below `<output>/videos/` and logged to W&B as `eval/fixed/video`. Video capture,
+render, wait, and logging durations are reported separately from PPO throughput.
 
 Training episode metrics describe the stochastic policy and randomized resets used to collect
 PPO rollouts. `eval/fixed/*` describes the canonical deterministic deployment trajectory, while
@@ -77,6 +96,7 @@ and evaluation time are logged as diagnostics rather than treated as policy perf
 - `vehicle`: exposes a pure `VehicleModel` contract. `PointMassModel` implements bounded acceleration and yaw-rate controls with semi-implicit integration.
 - `envs`: provides the Gymnax-compatible `RacingEnv`. Its 14-value ego observation contains normalized speed/lateral error, heading-error sine/cosine, previous action, and eight curvature previews.
 - `training`: contains resumable compiled PPO chunks and deterministic evaluation scans using a tanh-squashed Gaussian policy, GAE, clipped objectives, Flax, Optax, and explicit PRNG keys.
+- `visualization`: converts selected deterministic trajectories to host telemetry and renders headless evaluation MP4s without entering the environment or PPO JIT paths.
 - `configuration`: validates required process variables and falls back to `.env` for local runs.
 - `cli`: training, checkpoint evaluation, and reproducible benchmark entry points.
 

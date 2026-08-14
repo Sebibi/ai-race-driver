@@ -15,8 +15,8 @@ The implemented vertical slice includes:
 - An in-repository continuous-action PPO trainer using Flax, Optax, Distrax, `vmap`, and
   nested `lax.scan` loops.
 - Checkpoint save/load, deterministic evaluation, synchronized throughput benchmarks,
-  live chunked progress logging, periodic fixed/randomized evaluation, CPU CI, and an opt-in
-  three-seed learning acceptance test.
+  live chunked progress logging, periodic fixed/randomized evaluation, lightweight fixed-start
+  evaluation videos, CPU CI, and an opt-in three-seed learning acceptance test.
 
 ## Repository map
 
@@ -41,7 +41,10 @@ The implemented vertical slice includes:
 │   ├── envs/
 │   │   └── racing.py                 # Gymnax env, observations, rewards, reset/termination
 │   ├── training/
+│   │   ├── evaluation.py             # Deterministic metric and video trajectory scans
 │   │   └── ppo.py                    # Actor-critic, squashed policy, PPO, checkpoints
+│   ├── visualization/
+│   │   └── video.py                  # Host telemetry, track/model drawing, MP4 encoding
 │   └── cli/
 │       ├── train.py                  # `ai-race-train`
 │       ├── evaluate.py               # `ai-race-eval`
@@ -74,6 +77,9 @@ then export it only when it is part of the supported public API.
    not insert callbacks or other host work into a compiled chunk.
 6. Training serializes Flax parameters plus JSON configuration/metrics. Evaluation rebuilds
    the same network shape, restores parameters, and uses `tanh(mean)` deterministically.
+7. Optional evaluation videos use a separate compiled fixed-start trajectory scan. Only selected
+   trajectories cross to the host; Pillow/PyAV rendering and W&B media logging never enter a JAX
+   transform or PPO chunk.
 
 ## Public contracts and invariants
 
@@ -103,6 +109,8 @@ then export it only when it is part of the supported public API.
 - Treat `artifacts/` as generated output. Never commit checkpoints or benchmark JSON files.
 - Add production dependencies only when they replace meaningful project code or provide a
   required capability. Keep the training hot path small.
+- Keep plotting and video encoding in `visualization/`; do not add host rendering methods or
+  dependencies to vehicle, track, environment, or compiled training objects.
 - Preserve subsystem boundaries. Host orchestration belongs in `cli/`; reusable computation
   belongs in `track/`, `vehicle/`, `envs/`, or `training/`.
 - Update the README and this file when commands, module ownership, public contracts, or required
@@ -122,6 +130,9 @@ uv run ai-race-train --num-envs 8 --num-steps 8 --total-timesteps 128
 # Select compiled chunk and live evaluation/logging cadence in PPO updates
 uv run ai-race-train --log-every-updates 4 --eval-episodes 32
 
+# Opt-in fixed-start videos at initial, periodic, and final evaluation boundaries
+uv run ai-race-train --video-every-evals 5
+
 # W&B experiment tracking uses required environment variables or the local .env
 uv run ai-race-train
 
@@ -140,8 +151,8 @@ uv run pytest
 
 ## Pre-PR verification
 
-Before opening or updating a pull request, run every command from
-`.github/workflows/ci.yml` locally, in workflow order, and fix all failures:
+Before opening or updating a pull request, run every command from the pull-request validation
+job in `.github/workflows/ci.yml` locally, in workflow order, and fix all failures:
 
 ```bash
 uv sync --locked
@@ -150,8 +161,9 @@ uv run mypy
 uv run pytest
 ```
 
-Treat the workflow as the source of truth if its commands change. Do not open or update the
-pull request until this local CI sequence passes.
+Treat the validation workflow as the source of truth if its commands change. The merge-only
+`.github/workflows/train-after-merge.yml` performance run is intentionally excluded from
+pre-PR verification. Do not open or update the pull request until this local CI sequence passes.
 
 After opening a pull request or pushing new commits to an existing pull request, wait for all
 GitHub checks to finish with `gh pr checks --watch`. If any check fails, inspect its Actions
@@ -170,6 +182,8 @@ checks. Do not report the pull request as ready while checks are pending or fail
   `ai-race-eval`, and keep the generated artifact untracked.
 - Performance changes: run `ai-race-benchmark`; report compile and steady-state time separately
   and synchronize device work with `block_until_ready()`.
+- Visualization changes: encode and decode a real headless MP4, run a small training command with
+  video enabled, and confirm disabled video does not alter PPO compilation or throughput metrics.
 - Dependency or packaging changes: run `uv lock`, `uv sync --locked`, all static checks, and the
   default tests. Confirm the lock remains CPU-portable.
 

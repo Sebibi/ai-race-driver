@@ -1,0 +1,40 @@
+name: Training performance
+run-name: Train ${{ github.event.pull_request.base.ref }}@${{ github.event.pull_request.merge_commit_sha }}
+
+on:
+  pull_request_target:
+    branches:
+      - master
+    types:
+      - closed
+
+permissions:
+  contents: read
+
+jobs:
+  train:
+    if: github.event.pull_request.merged == true
+    name: Default training
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+      - name: Attach merge commit to the base branch
+        run: >-
+          git switch --force-create
+          "${{ github.event.pull_request.base.ref }}"
+          "${{ github.event.pull_request.merge_commit_sha }}"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Train with default parameters
+        run: uv run ai-race-train
+        env:
+          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+          WANDB_ENTITY: ${{ secrets.WANDB_ENTITY }}
+          WANDB_PROJECT: ${{ vars.WANDB_PROJECT }}
+          WANDB_MODE: online
+          WANDB_NAME: ${{ github.event.pull_request.base.ref }}@${{ github.event.pull_request.merge_commit_sha }}
