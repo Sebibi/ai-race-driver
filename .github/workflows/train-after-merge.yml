@@ -37,4 +37,7 @@ jobs:
           WANDB_ENTITY: ${{ secrets.WANDB_ENTITY }}
           WANDB_PROJECT: ${{ vars.WANDB_PROJECT }}
           WANDB_MODE: online
-          WANDB_NAME: ${{ github.event.pull_request.base.ref }}@${{ github.event.pull_request.merge_commit_sha }}
+          WANDB_NAME: >-
+            PR #${{ github.event.pull_request.number }}:
+            ${{ github.event.pull_request.title }}
+            (${{ github.event.pull_request.base.ref }}@${{ github.event.pull_request.merge_commit_sha }})
