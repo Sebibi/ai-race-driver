@@ -76,7 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--video-every-evals",
         type=_nonnegative_int,
-        default=0,
+        default=1,
         help="record fixed-start video every N evaluations; 0 disables video",
     )
     parser.add_argument("--output", type=Path, default=Path("artifacts/latest"))
