@@ -21,6 +21,9 @@ from ai_race_driver.visualization.video import (
     AsyncVideoRenderer,
     VideoRenderRequest,
     VideoRenderResult,
+    _format_axis_value,
+    _make_plots,
+    _y_axis_ticks,
     make_track_geometry,
     render_evaluation_video,
     trajectory_to_telemetry,
@@ -100,6 +103,21 @@ def test_telemetry_derives_wrapped_body_accelerations() -> None:
     np.testing.assert_allclose(telemetry.lateral_acceleration, (0.0, 4.0, 2.0), atol=4e-5)
     np.testing.assert_allclose(telemetry.cumulative_return, (0.0, 1.0, 3.0))
     assert telemetry.terminal_reason == "LAP COMPLETE"
+
+
+def test_every_plot_has_formatted_y_axis_ticks() -> None:
+    request = _request(Path("unused.mp4"))
+
+    plots = _make_plots(request.telemetry, request.track, request.width)
+
+    assert len(plots) == 4
+    for plot in plots:
+        ticks = _y_axis_ticks(plot)
+        assert tuple(fraction for fraction, _ in ticks) == (0.0, 0.5, 1.0)
+        assert tuple(value for _, value in ticks) == pytest.approx(
+            (plot.maximum, 0.5 * (plot.minimum + plot.maximum), plot.minimum)
+        )
+        assert all(_format_axis_value(value, plot.maximum - plot.minimum) for _, value in ticks)
 
 
 def test_rendered_mp4_is_decodable(tmp_path: Path) -> None:
