@@ -125,7 +125,7 @@ def test_live_tracking_cli_defaults_and_validation() -> None:
     assert args.log_every_updates == 4
     assert args.eval_episodes == 32
     assert args.eval_seed == 0
-    assert args.video_every_evals == 0
+    assert args.video_every_evals == 1
     assert not any(name.startswith("wandb_") for name in vars(args))
     with pytest.raises(SystemExit):
         train.build_parser().parse_args(["--log-every-updates", "0"])
