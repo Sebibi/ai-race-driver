@@ -30,6 +30,26 @@ class EvaluationSuiteMetrics(NamedTuple):
     randomized: EvaluationMetrics
 
 
+class EvaluationTrajectory(NamedTuple):
+    """Fixed-shape deterministic episode data for host-side visualization."""
+
+    position: jax.Array
+    heading: jax.Array
+    speed: jax.Array
+    action: jax.Array
+    reward: jax.Array
+    accumulated_progress: jax.Array
+    lateral_error: jax.Array
+    heading_error: jax.Array
+    valid: jax.Array
+    done: jax.Array
+    lap_complete: jax.Array
+    off_track: jax.Array
+    time_limit: jax.Array
+    episode_length: jax.Array
+    episode_return: jax.Array
+
+
 class _EvaluationState(NamedTuple):
     observation: jax.Array
     environment_state: Any
@@ -41,6 +61,29 @@ class _EvaluationState(NamedTuple):
     off_track: jax.Array
     time_limit: jax.Array
     key: jax.Array
+
+
+class _RecordingState(NamedTuple):
+    observation: jax.Array
+    environment_state: Any
+    active: jax.Array
+    key: jax.Array
+
+
+class _RecordingStep(NamedTuple):
+    position: jax.Array
+    heading: jax.Array
+    speed: jax.Array
+    action: jax.Array
+    reward: jax.Array
+    accumulated_progress: jax.Array
+    lateral_error: jax.Array
+    heading_error: jax.Array
+    valid: jax.Array
+    done: jax.Array
+    lap_complete: jax.Array
+    off_track: jax.Array
+    time_limit: jax.Array
 
 
 def _aggregate(state: _EvaluationState) -> EvaluationMetrics:
@@ -145,3 +188,115 @@ def make_evaluate_policy(
         )
 
     return evaluate
+
+
+def make_record_policy(
+    env: RacingEnv,
+    env_params: RacingEnvParams,
+    model: ActorCritic,
+):
+    """Build a pure fixed-start deterministic episode recorder.
+
+    This is intentionally separate from aggregate evaluation so trajectory arrays are
+    produced only at video boundaries. The scan uses ``step_env`` to retain the terminal
+    vehicle state instead of Gymnax's automatic-reset state.
+    """
+
+    evaluation_params = env_params.replace(randomize_reset=False)
+
+    def record(params: Any, key: jax.Array) -> EvaluationTrajectory:
+        reset_key, rollout_key = jax.random.split(key)
+        observation, environment_state = env.reset(reset_key, evaluation_params)
+        initial_environment_state = environment_state
+        initial_state = _RecordingState(
+            observation=observation,
+            environment_state=environment_state,
+            active=jnp.asarray(True),
+            key=rollout_key,
+        )
+
+        def recording_step(state: _RecordingState, _: None):
+            key, step_key = jax.random.split(state.key)
+            action = deterministic_action(model, params, state.observation)
+            next_observation, next_environment_state, reward, done, info = env.step_env(
+                step_key,
+                state.environment_state,
+                action,
+                evaluation_params,
+            )
+            valid = state.active
+            environment_state = jax.tree.map(
+                lambda previous, candidate: jnp.where(valid, candidate, previous),
+                state.environment_state,
+                next_environment_state,
+            )
+            observation = jnp.where(valid, next_observation, state.observation)
+            terminal = valid & done
+            output = _RecordingStep(
+                position=environment_state.vehicle.position,
+                heading=environment_state.vehicle.heading,
+                speed=environment_state.vehicle.speed,
+                action=jnp.where(valid, action, jnp.zeros_like(action)),
+                reward=jnp.where(valid, reward, 0.0),
+                accumulated_progress=environment_state.accumulated_progress,
+                lateral_error=environment_state.lateral_error,
+                heading_error=environment_state.heading_error,
+                valid=valid,
+                done=terminal,
+                lap_complete=terminal & info["lap_complete"],
+                off_track=terminal & info["off_track"],
+                time_limit=terminal & info["time_limit"],
+            )
+            return _RecordingState(
+                observation=observation,
+                environment_state=environment_state,
+                active=valid & ~done,
+                key=key,
+            ), output
+
+        _, steps = jax.lax.scan(
+            recording_step,
+            initial_state,
+            None,
+            length=evaluation_params.max_steps_in_episode,
+        )
+        return EvaluationTrajectory(
+            position=jnp.concatenate(
+                (initial_environment_state.vehicle.position[None, :], steps.position),
+                axis=0,
+            ),
+            heading=jnp.concatenate(
+                (initial_environment_state.vehicle.heading[None], steps.heading),
+                axis=0,
+            ),
+            speed=jnp.concatenate(
+                (initial_environment_state.vehicle.speed[None], steps.speed),
+                axis=0,
+            ),
+            action=steps.action,
+            reward=steps.reward,
+            accumulated_progress=jnp.concatenate(
+                (
+                    initial_environment_state.accumulated_progress[None],
+                    steps.accumulated_progress,
+                ),
+                axis=0,
+            ),
+            lateral_error=jnp.concatenate(
+                (initial_environment_state.lateral_error[None], steps.lateral_error),
+                axis=0,
+            ),
+            heading_error=jnp.concatenate(
+                (initial_environment_state.heading_error[None], steps.heading_error),
+                axis=0,
+            ),
+            valid=steps.valid,
+            done=steps.done,
+            lap_complete=steps.lap_complete,
+            off_track=steps.off_track,
+            time_limit=steps.time_limit,
+            episode_length=steps.valid.astype(jnp.int32).sum(),
+            episode_return=steps.reward.sum(),
+        )
+
+    return record

@@ -4,7 +4,8 @@ import argparse
 import logging
 import math
 import time
-from dataclasses import asdict
+from contextlib import ExitStack
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ from ai_race_driver.training.evaluation import (
     EvaluationMetrics,
     EvaluationSuiteMetrics,
     make_evaluate_policy,
+    make_record_policy,
 )
 from ai_race_driver.training.ppo import (
     ActorCritic,
@@ -37,6 +39,13 @@ def _positive_int(value: str) -> int:
     parsed = int(value)
     if parsed < 1:
         raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
+def _nonnegative_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be a non-negative integer")
     return parsed
 
 
@@ -64,9 +73,126 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         help="fixed seed used for comparable periodic evaluation starts",
     )
+    parser.add_argument(
+        "--video-every-evals",
+        type=_nonnegative_int,
+        default=0,
+        help="record fixed-start video every N evaluations; 0 disables video",
+    )
     parser.add_argument("--output", type=Path, default=Path("artifacts/latest"))
     parser.add_argument("--log-level", choices=LOG_LEVELS, default="INFO")
     return parser
+
+
+def should_record_video(
+    evaluation_index: int,
+    *,
+    is_final: bool,
+    cadence: int,
+) -> bool:
+    """Select initial, periodic, and final evaluation video boundaries."""
+
+    if evaluation_index < 0 or cadence < 0:
+        raise ValueError("evaluation_index and cadence must be non-negative")
+    return cadence > 0 and (evaluation_index == 0 or evaluation_index % cadence == 0 or is_final)
+
+
+@dataclass
+class _VideoTotals:
+    compilation_seconds: float = 0.0
+    capture_seconds: float = 0.0
+    render_seconds: float = 0.0
+    wait_seconds: float = 0.0
+    logging_seconds: float = 0.0
+    completed: int = 0
+    failures: int = 0
+
+
+def _make_video_request(
+    compiled_record: Any,
+    policy_params: Any,
+    evaluation_key: jax.Array,
+    *,
+    env_params: Any,
+    track_geometry: Any,
+    output: Path,
+    update: int,
+    global_step: int,
+) -> Any:
+    from ai_race_driver.visualization.video import VideoRenderRequest, trajectory_to_telemetry
+
+    capture_started = time.perf_counter()
+    trajectory = compiled_record(policy_params, evaluation_key)
+    jax.block_until_ready(trajectory.episode_length)
+    host_trajectory = jax.device_get(trajectory)
+    telemetry = trajectory_to_telemetry(host_trajectory, dt=env_params.vehicle.dt)
+    capture_seconds = time.perf_counter() - capture_started
+    return VideoRenderRequest(
+        telemetry=telemetry,
+        track=track_geometry,
+        output_path=output / "videos" / f"eval-step-{global_step:012d}.mp4",
+        global_step=global_step,
+        update=update,
+        capture_seconds=capture_seconds,
+    )
+
+
+def _collect_completed_video(
+    run: Any,
+    renderer: Any,
+    totals: _VideoTotals,
+    *,
+    wait: bool,
+) -> bool:
+    """Collect and log a completed background render; return false after a failure."""
+
+    collect_started = time.perf_counter()
+    try:
+        result = renderer.collect(wait=wait)
+    except Exception:
+        if wait:
+            totals.wait_seconds += time.perf_counter() - collect_started
+        totals.failures += 1
+        logger.exception("Evaluation video rendering failed; disabling subsequent videos")
+        return False
+    if wait:
+        totals.wait_seconds += time.perf_counter() - collect_started
+    if result is None:
+        return True
+
+    totals.render_seconds += result.render_seconds
+    totals.completed += 1
+    logging_started = time.perf_counter()
+    try:
+        run.log(
+            {
+                "global_step": result.global_step,
+                "update": result.update,
+                "eval/fixed/video": wandb.Video(
+                    str(result.path),
+                    caption=f"fixed-start policy at step {result.global_step:,}",
+                    format="mp4",
+                ),
+                "performance/video_capture_seconds": result.capture_seconds,
+                "performance/video_render_seconds": result.render_seconds,
+                "performance/video_wait_seconds": (
+                    time.perf_counter() - collect_started if wait else 0.0
+                ),
+            }
+        )
+    except Exception:
+        totals.failures += 1
+        logger.exception("Evaluation video logging failed; disabling subsequent videos")
+        return False
+    finally:
+        totals.logging_seconds += time.perf_counter() - logging_started
+    logger.info(
+        "Saved evaluation video to %s (%d frames, %.3fs render)",
+        result.path,
+        result.frame_count,
+        result.render_seconds,
+    )
+    return True
 
 
 def _episode_statistics(metrics: UpdateMetrics, index: int) -> dict[str, float]:
@@ -245,6 +371,12 @@ def main() -> None:
     args = build_parser().parse_args()
     configure_logging(args.log_level, entrypoint_logger=logger)
     setup_environment()
+    video_module: Any | None = None
+    if args.video_every_evals > 0:
+        from ai_race_driver.visualization import video as imported_video_module
+
+        imported_video_module.validate_video_backend()
+        video_module = imported_video_module
     devices = jax.devices()
     logger.info("JAX devices: %s", devices)
     config = PPOConfig(
@@ -269,15 +401,26 @@ def main() -> None:
         "log_every_updates": args.log_every_updates,
         "eval_episodes": args.eval_episodes,
         "eval_seed": args.eval_seed,
+        "video_every_evals": args.video_every_evals,
         **asdict(config),
         **git_metadata,
     }
 
     logger.info("PPO config: %s", config)
     logger.info("Live logging and evaluation every %d PPO update(s)", args.log_every_updates)
+    if args.video_every_evals > 0:
+        logger.info(
+            "Fixed-start evaluation videos enabled every %d evaluation(s)",
+            args.video_every_evals,
+        )
     process_started = time.perf_counter()
-    with wandb.init(config=wandb_config) as run:
+    with wandb.init(config=wandb_config) as run, ExitStack() as exit_stack:
         configure_wandb_metrics(run)
+        video_totals = _VideoTotals()
+        compiled_record: Any | None = None
+        video_renderer: Any | None = None
+        track_geometry: Any | None = None
+        video_enabled = video_module is not None
 
         compilation_started = time.perf_counter()
         compiled_initialize = jax.jit(initialize).lower(training_key).compile()
@@ -304,6 +447,67 @@ def main() -> None:
             evaluation_compilation_seconds,
         )
 
+        if video_module is not None:
+            video_compilation_started = time.perf_counter()
+            record_policy = make_record_policy(env, env_params, model)
+            compiled_record = (
+                jax.jit(record_policy)
+                .lower(runner_state.train_state.params, evaluation_key)
+                .compile()
+            )
+            video_totals.compilation_seconds = (
+                time.perf_counter() - video_compilation_started
+            )
+            track_geometry = video_module.make_track_geometry(jax.device_get(env_params.track))
+            video_renderer = exit_stack.enter_context(video_module.AsyncVideoRenderer())
+            logger.info(
+                "Compiled fixed-start video trajectory capture in %.3f seconds",
+                video_totals.compilation_seconds,
+            )
+
+        def schedule_video(update: int, global_step: int) -> bool:
+            if compiled_record is None or video_renderer is None or track_geometry is None:
+                return False
+            try:
+                request = _make_video_request(
+                    compiled_record,
+                    runner_state.train_state.params,
+                    evaluation_key,
+                    env_params=env_params,
+                    track_geometry=track_geometry,
+                    output=args.output,
+                    update=update,
+                    global_step=global_step,
+                )
+                video_totals.capture_seconds += request.capture_seconds
+                video_renderer.submit(request)
+            except Exception:
+                video_totals.failures += 1
+                logger.exception("Evaluation video capture failed; disabling subsequent videos")
+                return False
+            logger.info("Scheduled evaluation video for step %s", f"{global_step:,}")
+            return True
+
+        compiled_chunks: dict[int, Any] = {}
+        compilation_seconds = initialization_compilation_seconds + evaluation_compilation_seconds
+        primary_chunk_updates = min(args.log_every_updates, config.num_updates)
+        chunk_sizes = {primary_chunk_updates}
+        remainder_updates = config.num_updates % args.log_every_updates
+        if remainder_updates:
+            chunk_sizes.add(remainder_updates)
+        for chunk_updates in sorted(chunk_sizes, reverse=True):
+            compilation_started = time.perf_counter()
+            compiled_chunks[chunk_updates] = (
+                jax.jit(make_chunk(chunk_updates)).lower(runner_state).compile()
+            )
+            chunk_compilation_seconds = time.perf_counter() - compilation_started
+            compilation_seconds += chunk_compilation_seconds
+            logger.info(
+                "Compiled %d-update training chunk in %.3f seconds",
+                chunk_updates,
+                chunk_compilation_seconds,
+            )
+
         evaluation_started = time.perf_counter()
         evaluation = compiled_evaluate(runner_state.train_state.params, evaluation_key)
         jax.block_until_ready(evaluation.fixed.return_mean)
@@ -315,11 +519,13 @@ def main() -> None:
                 "update": 0,
                 "performance/evaluation_seconds": evaluation_seconds,
                 "performance/initialization_seconds": initialization_seconds,
-                "performance/compilation_seconds": (
-                    initialization_compilation_seconds + evaluation_compilation_seconds
-                ),
+                "performance/compilation_seconds": compilation_seconds,
             }
         )
+        if video_enabled:
+            initial_record["performance/video_compilation_seconds"] = (
+                video_totals.compilation_seconds
+            )
         run.log(initial_record)
 
         best_return = float(host_evaluation.fixed.return_mean)
@@ -347,32 +553,24 @@ def main() -> None:
             float(host_evaluation.randomized.return_std),
             100.0 * float(host_evaluation.randomized.lap_success_rate),
         )
+        if should_record_video(
+            0,
+            is_final=config.num_updates == 0,
+            cadence=args.video_every_evals,
+        ):
+            video_enabled = schedule_video(0, 0)
 
-        compiled_chunks: dict[int, Any] = {}
-        compilation_seconds = initialization_compilation_seconds + evaluation_compilation_seconds
         training_seconds = 0.0
         evaluation_seconds_total = evaluation_seconds
         final_metrics: UpdateMetrics | None = None
 
         completed_updates = 0
+        evaluation_index = 0
         while completed_updates < config.num_updates:
             chunk_updates = min(
                 args.log_every_updates,
                 config.num_updates - completed_updates,
             )
-            if chunk_updates not in compiled_chunks:
-                compilation_started = time.perf_counter()
-                compiled_chunks[chunk_updates] = (
-                    jax.jit(make_chunk(chunk_updates)).lower(runner_state).compile()
-                )
-                chunk_compilation_seconds = time.perf_counter() - compilation_started
-                compilation_seconds += chunk_compilation_seconds
-                logger.info(
-                    "Compiled %d-update training chunk in %.3f seconds",
-                    chunk_updates,
-                    chunk_compilation_seconds,
-                )
-
             chunk_started = time.perf_counter()
             chunk_output = compiled_chunks[chunk_updates](runner_state)
             jax.block_until_ready(chunk_output.metrics.loss)
@@ -390,6 +588,30 @@ def main() -> None:
             evaluation_seconds = time.perf_counter() - evaluation_started
             evaluation_seconds_total += evaluation_seconds
             host_evaluation = jax.device_get(evaluation)
+            evaluation_index += 1
+            is_final_evaluation = completed_updates == config.num_updates
+
+            if video_renderer is not None and video_enabled:
+                video_enabled = _collect_completed_video(
+                    run,
+                    video_renderer,
+                    video_totals,
+                    wait=False,
+                )
+            if video_enabled and should_record_video(
+                evaluation_index,
+                is_final=is_final_evaluation,
+                cadence=args.video_every_evals,
+            ):
+                if video_renderer is not None and video_renderer.pending:
+                    video_enabled = _collect_completed_video(
+                        run,
+                        video_renderer,
+                        video_totals,
+                        wait=True,
+                    )
+                if video_enabled:
+                    video_enabled = schedule_video(completed_updates, global_step)
 
             fixed_return = float(host_evaluation.fixed.return_mean)
             if fixed_return > best_return:
@@ -465,12 +687,27 @@ def main() -> None:
         if final_metrics is None:
             raise RuntimeError("training completed without producing metrics")
 
+        if video_renderer is not None and video_enabled:
+            video_enabled = _collect_completed_video(
+                run,
+                video_renderer,
+                video_totals,
+                wait=True,
+            )
+
         summary = {
             "seed": args.seed,
             "device": str(devices[0]),
             "compilation_seconds": compilation_seconds,
             "training_seconds": training_seconds,
             "evaluation_seconds": evaluation_seconds_total,
+            "video_compilation_seconds": video_totals.compilation_seconds,
+            "video_capture_seconds": video_totals.capture_seconds,
+            "video_render_seconds": video_totals.render_seconds,
+            "video_wait_seconds": video_totals.wait_seconds,
+            "video_logging_seconds": video_totals.logging_seconds,
+            "videos_completed": video_totals.completed,
+            "video_failures": video_totals.failures,
             "train_steps_per_second": config.total_timesteps / training_seconds,
             "best_fixed_return": best_return,
             "best_update": best_update,
@@ -510,10 +747,14 @@ def main() -> None:
             args.output / "best",
         )
         logger.info(
-            "Finished in %.3fs | training %.3fs | evaluation %.3fs | %.0f train steps/s",
+            "Finished in %.3fs | training %.3fs | evaluation %.3fs | video %.3fs render "
+            "(%d completed, %d failed) | %.0f train steps/s",
             elapsed_seconds,
             training_seconds,
             evaluation_seconds_total,
+            video_totals.render_seconds,
+            video_totals.completed,
+            video_totals.failures,
             config.total_timesteps / training_seconds,
         )
 
