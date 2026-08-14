@@ -122,7 +122,7 @@ def test_chunk_logging_keeps_per_update_history_and_evaluates_at_boundary() -> N
 def test_live_tracking_cli_defaults_and_validation() -> None:
     args = train.build_parser().parse_args([])
 
-    assert args.log_every_updates == 4
+    assert args.log_every_updates == 16
     assert args.eval_episodes == 32
     assert args.eval_seed == 0
     assert args.video_every_evals == 1
