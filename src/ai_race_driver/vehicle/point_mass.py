@@ -20,8 +20,8 @@ class PointMassParams:
 
     dt: float = struct.field(pytree_node=False, default=0.05)
     max_speed: float = struct.field(pytree_node=False, default=40.0)
-    max_ax: float = struct.field(pytree_node=False, default=8.0)
-    max_ay: float = struct.field(pytree_node=False, default=120.0)
+    max_ax: float = struct.field(pytree_node=False, default=20.0)
+    max_ay: float = struct.field(pytree_node=False, default=50.0)
 
 
 class PointMassModel:
