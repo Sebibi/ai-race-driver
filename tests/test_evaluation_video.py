@@ -101,6 +101,10 @@ def test_telemetry_derives_wrapped_body_accelerations() -> None:
     np.testing.assert_allclose(telemetry.longitudinal_acceleration, (0.0, 10.0, 0.0))
     np.testing.assert_allclose(telemetry.yaw_rate, (0.0, 2.0, 1.0), atol=2e-5)
     np.testing.assert_allclose(telemetry.lateral_acceleration, (0.0, 4.0, 2.0), atol=4e-5)
+    np.testing.assert_allclose(
+        telemetry.ellipse_utilization,
+        (0.0, np.hypot(0.5, 0.2), 0.1),
+    )
     np.testing.assert_allclose(telemetry.cumulative_return, (0.0, 1.0, 3.0))
     assert telemetry.terminal_reason == "LAP COMPLETE"
 
@@ -110,7 +114,7 @@ def test_every_plot_has_formatted_y_axis_ticks() -> None:
 
     plots = _make_plots(request.telemetry, request.track, request.width)
 
-    assert len(plots) == 5
+    assert len(plots) == 6
     for plot in plots:
         ticks = _y_axis_ticks(plot)
         assert tuple(fraction for fraction, _ in ticks) == (0.0, 0.5, 1.0)
@@ -118,6 +122,19 @@ def test_every_plot_has_formatted_y_axis_ticks() -> None:
             (plot.maximum, 0.5 * (plot.minimum + plot.maximum), plot.minimum)
         )
         assert all(_format_axis_value(value, plot.maximum - plot.minimum) for _, value in ticks)
+
+
+def test_ellipse_utilization_plot_uses_normalized_acceleration_norm() -> None:
+    request = _request(Path("unused.mp4"))
+
+    utilization_plot = _make_plots(request.telemetry, request.track, request.width)[2]
+
+    assert utilization_plot.title == "Ellipse utilization"
+    assert (utilization_plot.minimum, utilization_plot.maximum) == (0.0, 1.0)
+    np.testing.assert_allclose(
+        utilization_plot.series[0].values,
+        (0.0, np.hypot(0.5, 0.2), 0.1),
+    )
 
 
 def test_reward_plot_aligns_transition_rewards_with_resulting_states() -> None:

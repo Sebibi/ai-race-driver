@@ -49,6 +49,7 @@ class EpisodeTelemetry:
     lateral_error: np.ndarray
     heading_error: np.ndarray
     action: np.ndarray
+    ellipse_utilization: np.ndarray
     reward: np.ndarray
     cumulative_return: np.ndarray
     progress: np.ndarray
@@ -193,6 +194,13 @@ def trajectory_to_telemetry(trajectory: Any, *, dt: float) -> EpisodeTelemetry:
     cumulative_return = np.concatenate(
         (np.zeros(1, dtype=np.float32), np.cumsum(reward, dtype=np.float32))
     )
+    normalized_acceleration = np.clip(action, -1.0, 1.0)
+    ellipse_utilization = np.concatenate(
+        (
+            np.zeros(1, dtype=np.float32),
+            np.minimum(np.linalg.norm(normalized_acceleration, axis=-1), 1.0),
+        )
+    )
     time_axis = np.arange(state_count, dtype=np.float32) * dt
 
     terminal_index = episode_length - 1
@@ -207,6 +215,7 @@ def trajectory_to_telemetry(trajectory: Any, *, dt: float) -> EpisodeTelemetry:
         lateral_error=lateral_error,
         heading_error=heading_error,
         action=action,
+        ellipse_utilization=ellipse_utilization,
         reward=reward,
         cumulative_return=cumulative_return,
         progress=progress,
@@ -251,11 +260,12 @@ def _make_plots(telemetry: EpisodeTelemetry, track: TrackGeometry, width: int) -
     x0 = width - 394
     x1 = width - 24
     rectangles = (
-        (x0, 74, x1, 174),
-        (x0, 193, x1, 293),
-        (x0, 312, x1, 412),
-        (x0, 431, x1, 531),
-        (x0, 550, x1, 650),
+        (x0, 74, x1, 154),
+        (x0, 173, x1, 253),
+        (x0, 272, x1, 352),
+        (x0, 371, x1, 451),
+        (x0, 470, x1, 550),
+        (x0, 569, x1, 649),
     )
     speed_max = max(float(np.max(telemetry.speed)) * 1.08, 1.0)
     accel_min, accel_max = _symmetric_range(
@@ -288,22 +298,29 @@ def _make_plots(telemetry: EpisodeTelemetry, track: TrackGeometry, width: int) -
             accel_max,
         ),
         _Plot(
-            "Yaw rate [rad/s]",
+            "Ellipse utilization",
             rectangles[2],
+            (_PlotSeries("usage", telemetry.ellipse_utilization, (255, 214, 92)),),
+            0.0,
+            1.0,
+        ),
+        _Plot(
+            "Yaw rate [rad/s]",
+            rectangles[3],
             (_PlotSeries("yaw", telemetry.yaw_rate, (102, 220, 145)),),
             yaw_min,
             yaw_max,
         ),
         _Plot(
             "Lateral error [m]",
-            rectangles[3],
+            rectangles[4],
             (_PlotSeries("error", telemetry.lateral_error, (184, 133, 255)),),
             lateral_min,
             lateral_max,
         ),
         _Plot(
             "Reward",
-            rectangles[4],
+            rectangles[5],
             (_PlotSeries("reward", reward_by_state, (246, 211, 101)),),
             reward_min,
             reward_max,
