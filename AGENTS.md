@@ -8,7 +8,7 @@ run in JAX and are designed to compile together for accelerator execution.
 
 The implemented vertical slice includes:
 
-- A heading-and-speed point vehicle with normalized acceleration and yaw-rate actions.
+- A heading-and-speed point vehicle with normalized longitudinal and lateral acceleration actions.
 - Closed tracks fitted as periodic cubic splines, with constant-width boundaries.
 - A Gymnax-compatible racing environment with randomized training resets and fixed-start
   evaluation.
@@ -83,7 +83,8 @@ then export it only when it is part of the supported public API.
 
 ## Public contracts and invariants
 
-- Actions have shape `(2,)`, are clipped to `[-1, 1]`, and mean `(longitudinal, turn)`.
+- Actions have shape `(2,)`, are clipped to `[-1, 1]`, and mean normalized `(ax, ay)` demands.
+  Combined demands outside the point mass's traction ellipse are projected onto its boundary.
 - Point-mass state is `(position[2], heading, speed)` in SI units; speed stays within model
   limits and heading is wrapped to `[-pi, pi)`.
 - Tracks are closed, periodic, constant-width, and require fixed sample counts for compiled

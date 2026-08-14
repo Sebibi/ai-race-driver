@@ -20,13 +20,12 @@ class PointMassParams:
 
     dt: float = struct.field(pytree_node=False, default=0.05)
     max_speed: float = struct.field(pytree_node=False, default=40.0)
-    max_accel: float = struct.field(pytree_node=False, default=8.0)
-    max_decel: float = struct.field(pytree_node=False, default=12.0)
-    max_yaw_rate: float = struct.field(pytree_node=False, default=2.0)
+    max_ax: float = struct.field(pytree_node=False, default=8.0)
+    max_ay: float = struct.field(pytree_node=False, default=120.0)
 
 
 class PointMassModel:
-    """Semi-implicit point-vehicle dynamics with acceleration and yaw-rate controls."""
+    """Semi-implicit point-vehicle dynamics with acceleration controls."""
 
     def reset(
         self,
@@ -45,13 +44,14 @@ class PointMassModel:
         params: PointMassParams,
     ) -> PointMassState:
         action = jnp.clip(action, -1.0, 1.0)
-        acceleration = jnp.where(
-            action[0] >= 0.0,
-            action[0] * params.max_accel,
-            action[0] * params.max_decel,
-        )
-        speed = jnp.clip(state.speed + acceleration * params.dt, 0.0, params.max_speed)
-        heading = wrap_angle(state.heading + action[1] * params.max_yaw_rate * params.dt)
+        traction_usage = jnp.linalg.norm(action)
+        action = action / jnp.maximum(traction_usage, 1.0)
+        ax = action[0] * params.max_ax
+        ay = action[1] * params.max_ay
+
+        speed = jnp.clip(state.speed + ax * params.dt, 0.0, params.max_speed)
+        yaw_rate = jnp.where(speed > 0.0, ay / jnp.maximum(speed, 1e-6), 0.0)
+        heading = wrap_angle(state.heading + yaw_rate * params.dt)
         direction = jnp.stack((jnp.cos(heading), jnp.sin(heading)))
         position = state.position + speed * params.dt * direction
         return PointMassState(position=position, heading=heading, speed=speed)
