@@ -248,7 +248,7 @@ def _symmetric_range(*values: np.ndarray, minimum_span: float = 1.0) -> tuple[fl
 
 
 def _make_plots(telemetry: EpisodeTelemetry, track: TrackGeometry, width: int) -> tuple[_Plot, ...]:
-    x0 = width - 430
+    x0 = width - 394
     x1 = width - 24
     rectangles = (
         (x0, 74, x1, 205),
@@ -299,6 +299,16 @@ def _make_plots(telemetry: EpisodeTelemetry, track: TrackGeometry, width: int) -
             lateral_max,
         ),
     )
+
+
+def _y_axis_ticks(plot: _Plot) -> tuple[tuple[float, float], ...]:
+    midpoint = 0.5 * (plot.minimum + plot.maximum)
+    return ((0.0, plot.maximum), (0.5, midpoint), (1.0, plot.minimum))
+
+
+def _format_axis_value(value: float, span: float) -> str:
+    precision = 2 if span < 1.0 else 1
+    return f"{value:.{precision}f}"
 
 
 def _plot_points(
@@ -352,10 +362,19 @@ def _draw_static_frame(
 
     for plot, series_points in zip(plots, plot_points, strict=True):
         x0, y0, x1, y1 = plot.rect
-        draw.rounded_rectangle((x0 - 10, y0 - 22, x1 + 10, y1 + 18), 8, fill=_PANEL)
-        for fraction in (0.0, 0.5, 1.0):
+        draw.rounded_rectangle((x0 - 46, y0 - 22, x1 + 10, y1 + 10), 8, fill=_PANEL)
+        value_span = plot.maximum - plot.minimum
+        for fraction, value in _y_axis_ticks(plot):
             grid_y = round(y0 + fraction * (y1 - y0))
             draw.line((x0, grid_y, x1, grid_y), fill=_GRID, width=1)
+            value_text = _format_axis_value(value, value_span)
+            value_width = draw.textlength(value_text, font=font)
+            draw.text(
+                (x0 - value_width - 6, grid_y - 5),
+                value_text,
+                fill=_MUTED,
+                font=font,
+            )
         if plot.minimum < 0.0 < plot.maximum:
             zero_y = round(y1 - (y1 - y0) * (-plot.minimum) / (plot.maximum - plot.minimum))
             draw.line((x0, zero_y, x1, zero_y), fill=_MUTED, width=1)
@@ -365,10 +384,6 @@ def _draw_static_frame(
             for series in plot.series:
                 draw.text((legend_x, y0 - 18), series.name, fill=series.color, font=font)
                 legend_x += 34
-        draw.text((x0, y1 + 4), f"{plot.minimum:.1f}", fill=_MUTED, font=font)
-        maximum_text = f"{plot.maximum:.1f}"
-        maximum_width = draw.textlength(maximum_text, font=font)
-        draw.text((x1 - maximum_width, y1 + 4), maximum_text, fill=_MUTED, font=font)
         for series, points in zip(plot.series, series_points, strict=True):
             if len(points) > 1:
                 draw.line(points, fill=_dim(series.color), width=2)

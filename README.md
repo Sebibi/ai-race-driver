@@ -78,8 +78,9 @@ transfer, rendering, or media-upload overhead. Setting `--video-every-evals N` r
 deterministic fixed-start policy at step zero, every Nth evaluation, and the final evaluation.
 The video trajectory is produced by a separate compiled scan and transferred to the host only at
 those boundaries. Pillow draws the track, driven path, heading marker, speed, longitudinal and
-lateral acceleration, yaw rate, and lateral error; PyAV streams at most 300 frames directly into
-an H.264 MP4. A single background worker overlaps rendering with subsequent training. If it is
+lateral acceleration, yaw rate, and lateral error with labeled y-axis scales; PyAV streams at
+most 300 frames directly into an H.264 MP4. A single background worker overlaps rendering with
+subsequent training. If it is
 still busy when another video is due, training waits rather than dropping the requested video.
 Videos are written below `<output>/videos/` and logged to W&B as `eval/fixed/video`. Video capture,
 render, wait, and logging durations are reported separately from PPO throughput.
