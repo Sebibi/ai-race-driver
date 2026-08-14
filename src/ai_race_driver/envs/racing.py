@@ -292,7 +292,7 @@ class RacingEnv(environment.Environment[RacingEnvState, RacingEnvParams]):
 
         Args:
             state: Current RacingEnvState (vehicle, position, errors, action history)
-            params: RacingEnvParams (if None, uses default); needed for track width and vehicle speed
+            params: RacingEnvParams (if None, uses default); needed for track width and car speed
             key: Unused (for Gymnax compatibility)
 
         Returns:
