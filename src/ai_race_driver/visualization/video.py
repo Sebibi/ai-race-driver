@@ -277,6 +277,8 @@ def _make_plots(telemetry: EpisodeTelemetry, track: TrackGeometry, width: int) -
         telemetry.lateral_error,
         minimum_span=0.5 * track.width,
     )
+    action_ax = np.concatenate((np.zeros(1, dtype=np.float32), telemetry.action[:, 0]))
+    action_ay = np.concatenate((np.zeros(1, dtype=np.float32), telemetry.action[:, 1]))
     reward_by_state = np.concatenate((np.zeros(1, dtype=np.float32), telemetry.reward))
     reward_min, reward_max = _symmetric_range(reward_by_state, minimum_span=0.1)
     return (
@@ -291,11 +293,11 @@ def _make_plots(telemetry: EpisodeTelemetry, track: TrackGeometry, width: int) -
             "Acceleration ax / ay [m/s^2]",
             rectangles[1],
             (
-                _PlotSeries("ax", telemetry.longitudinal_acceleration, (255, 170, 70)),
-                _PlotSeries("ay", telemetry.lateral_acceleration, (255, 92, 150)),
+                _PlotSeries("ax", action_ax, (255, 170, 70)),
+                _PlotSeries("ay", action_ay, (255, 92, 150)),
             ),
-            accel_min,
-            accel_max,
+            -1.0,
+            1.0,
         ),
         _Plot(
             "Ellipse utilization",
