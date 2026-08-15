@@ -28,7 +28,7 @@ class PPOConfig:
     num_minibatches: int = 4
     update_epochs: int = 4
     learning_rate: float = 3e-4
-    gamma: float = 0.99
+    gamma: float = 0.95
     gae_lambda: float = 0.95
     clip_epsilon: float = 0.2
     value_coefficient: float = 0.5
