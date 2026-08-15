@@ -26,7 +26,11 @@ The implemented vertical slice includes:
 ├── README.md                         # Setup, architecture, and command examples
 ├── pyproject.toml                    # Package metadata, dependencies, tools, CLI scripts
 ├── uv.lock                           # Reproducible CPU dependency lock
+├── Dockerfile                        # Shared CPU/CUDA 13 image targets
+├── .dockerignore                     # Excludes secrets, Git data, and generated state
+├── .devcontainer/{cpu,gpu}/          # Selectable local development containers
 ├── .github/workflows/ci.yml          # CPU lint, type-check, and test workflow
+├── .github/workflows/containers.yml  # Container validation and GHCR publication
 ├── src/ai_race_driver/
 │   ├── AGENTS.md                     # JAX-specific implementation constraints
 │   ├── __init__.py                   # Supported top-level public exports
@@ -107,6 +111,10 @@ then export it only when it is part of the supported public API.
 - Start with `uv sync`. Do not use ad-hoc global installs.
 - Keep the committed `uv.lock` CPU-only. The README documents the local NVIDIA JAX override;
   do not lock platform-specific CUDA wheels into the project.
+- Keep the Docker `cpu` target locked to `uv.lock`. The `cuda13` target may overlay only the
+  CUDA extra matching the JAX version already installed from that lock.
+- Never copy `.env`, `.git`, checkpoints, W&B state, or host virtual environments into an image.
+  Container credentials are runtime-only and cloud outputs must use mounted persistent storage.
 - Treat `artifacts/` as generated output. Never commit checkpoints or benchmark JSON files.
 - Add production dependencies only when they replace meaningful project code or provide a
   required capability. Keep the training hot path small.
@@ -142,6 +150,10 @@ uv run ai-race-eval --checkpoint artifacts/latest --episodes 3
 
 # Synchronized environment benchmark; add --ppo for trainer throughput
 uv run ai-race-benchmark --num-envs 2048 --num-steps 1000
+
+# Build the unified development/job images
+docker build --platform linux/amd64 --target cpu --tag ai-race-driver:cpu .
+docker build --platform linux/amd64 --target cuda13 --tag ai-race-driver:cuda13 .
 
 # Expensive convergence acceptance: three seeds must finish a fixed-start oval lap
 AI_RACE_RUN_SLOW=1 uv run pytest -m slow
@@ -201,6 +213,9 @@ checks. Do not report the pull request as ready while checks are pending or fail
   video enabled, and confirm disabled video does not alter PPO compilation or throughput metrics.
 - Dependency or packaging changes: run `uv lock`, `uv sync --locked`, all static checks, and the
   default tests. Confirm the lock remains CPU-portable.
+- Container changes: build both targets, run a tiny CPU train/evaluate round trip, verify the
+  CUDA packages without a GPU, and run training plus PPO benchmarking on a real CUDA 13 node
+  before treating GPU execution as verified.
 
 Do not weaken assertions, reduce the slow acceptance requirement, or move device work to Python
 to make checks pass. Fix the underlying numerical, compilation, or interface regression.

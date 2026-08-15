@@ -1,0 +1,27 @@
+{
+  "name": "AI Race Driver (CUDA 13)",
+  "build": {
+    "dockerfile": "../../Dockerfile",
+    "context": "../..",
+    "options": ["--platform=linux/amd64"],
+    "target": "cuda13"
+  },
+  "remoteUser": "coder",
+  "runArgs": ["--gpus", "all", "--platform", "linux/amd64"],
+  "hostRequirements": {
+    "gpu": true
+  },
+  "postCreateCommand": "uv sync --locked --inexact",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "charliermarsh.ruff",
+        "ms-python.mypy-type-checker",
+        "ms-python.python"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/opt/venv/bin/python"
+      }
+    }
+  }
+}
