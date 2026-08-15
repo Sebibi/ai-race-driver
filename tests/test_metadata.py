@@ -28,6 +28,7 @@ def test_get_git_metadata_uses_ci_branch_for_detached_head(monkeypatch: Any) -> 
         ("rev-parse", "HEAD"): "def456",
     }
     monkeypatch.setattr(metadata, "_git_output", lambda _, *args: outputs[args])
+    monkeypatch.delenv("AI_RACE_GIT_BRANCH", raising=False)
     monkeypatch.setenv("GITHUB_HEAD_REF", "feature/pull-request")
 
     assert metadata.get_git_metadata()["git_branch"] == "feature/pull-request"
