@@ -83,9 +83,23 @@ def test_compiled_recording_is_reproducible_and_retains_terminal_state() -> None
 
     assert first.position.shape == (params.max_steps_in_episode + 1, 2)
     assert first.action.shape == (params.max_steps_in_episode, 2)
-    assert int(first.episode_length) == params.max_steps_in_episode
-    assert bool(first.done[params.max_steps_in_episode - 1])
-    assert bool(first.time_limit[params.max_steps_in_episode - 1])
+    episode_length = int(first.episode_length)
+    terminal_index = episode_length - 1
+    assert 0 < episode_length <= params.max_steps_in_episode
+    assert int(first.done.sum()) == 1
+    assert bool(first.done[terminal_index])
+    assert bool(
+        first.lap_complete[terminal_index]
+        | first.off_track[terminal_index]
+        | first.time_limit[terminal_index]
+    )
+    np.testing.assert_array_equal(
+        np.asarray(first.position[episode_length:]),
+        np.broadcast_to(
+            np.asarray(first.position[episode_length]),
+            first.position[episode_length:].shape,
+        ),
+    )
     assert not np.array_equal(
         np.asarray(first.position[-1]),
         np.asarray(initial_state.vehicle.position),
