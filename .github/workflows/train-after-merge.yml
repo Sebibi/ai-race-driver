@@ -31,7 +31,7 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - name: Train with default parameters
-        run: uv run ai-race-train
+        run: uv run ai-race-train --total-steps 67108864 --num-envs 2048 --num-steps 128 --log-every-updates 64
         env:
           WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
           WANDB_ENTITY: ${{ secrets.WANDB_ENTITY }}

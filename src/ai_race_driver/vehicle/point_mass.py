@@ -18,7 +18,7 @@ class PointMassState:
 class PointMassParams:
     """Physical limits for the point vehicle, in SI units."""
 
-    dt: float = struct.field(pytree_node=False, default=0.05)
+    dt: float = struct.field(pytree_node=False, default=0.10)
     max_speed: float = struct.field(pytree_node=False, default=40.0)
     max_ax: float = struct.field(pytree_node=False, default=20.0)
     max_ay: float = struct.field(pytree_node=False, default=50.0)
