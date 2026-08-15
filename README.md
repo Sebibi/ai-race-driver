@@ -24,6 +24,81 @@ uv run python -c "import jax; print(jax.devices())"
 
 See the [JAX installation guide](https://docs.jax.dev/en/latest/installation.html) if CUDA 12 or a locally installed CUDA runtime is required.
 
+## Containers
+
+The repository contains two selectable development-container configurations backed by one
+multi-target Dockerfile:
+
+- `AI Race Driver (CPU)` builds the `cpu` target for tests, debugging, and CPU baselines.
+- `AI Race Driver (CUDA 13)` builds the `cuda13` target and starts Docker with `--gpus all`.
+
+With the VS Code Dev Containers extension, run **Dev Containers: Reopen in Container** and
+choose the required configuration. Both images use Python 3.13, install the locked project and
+development tools into `/opt/venv`, and run as an unprivileged `coder` user. The mounted checkout
+is synchronized in editable mode when the container is first created.
+
+The CPU container only requires Docker Engine with Buildx. The GPU container additionally
+requires an NVIDIA GPU with compute capability 7.5 or newer, Linux driver 580 or newer, and the
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+JAX's CUDA 13 pip wheels provide the CUDA and cuDNN user-space libraries; do not inject a
+different CUDA installation through `LD_LIBRARY_PATH`.
+
+Build the same images without a devcontainer as follows:
+
+```bash
+docker build --platform linux/amd64 --target cpu --tag ai-race-driver:cpu .
+docker build --platform linux/amd64 --target cuda13 --tag ai-race-driver:cuda13 .
+
+docker run --rm ai-race-driver:cpu \
+  python -c "import jax; print(jax.devices())"
+docker run --rm --gpus all ai-race-driver:cuda13 \
+  python -c "import jax; assert jax.default_backend() == 'gpu'; print(jax.devices())"
+```
+
+Secrets are supplied only at runtime. For example, the ignored local `.env` file can be passed
+to a CPU smoke run while checkpoints are written to a host directory:
+
+```bash
+mkdir -p artifacts/container-cpu
+docker run --rm \
+  --env-file .env \
+  --mount type=bind,source="$(pwd)/artifacts/container-cpu",target=/outputs \
+  ai-race-driver:cpu \
+  ai-race-train \
+    --num-envs 8 \
+    --num-steps 8 \
+    --total-timesteps 128 \
+    --eval-episodes 1 \
+    --video-every-evals 0 \
+    --output /outputs/run
+```
+
+The benchmark CLI does not require W&B credentials:
+
+```bash
+docker run --rm ai-race-driver:cpu \
+  ai-race-benchmark --num-envs 2048 --num-steps 1000 --ppo
+docker run --rm --gpus all ai-race-driver:cuda13 \
+  ai-race-benchmark --num-envs 2048 --num-steps 1000 --ppo
+```
+
+GitHub Actions validates both targets on relevant pull requests. Merges to `master` publish
+public images to `ghcr.io/sebibi/ai-race-driver` with moving `cpu` and `cuda13` tags plus immutable
+`cpu-git-<full-commit>` and `cuda13-git-<full-commit>` tags. The workflow can also be dispatched
+for an explicit branch, tag, or commit; manual publications receive only immutable tags. After
+the first publication, set the package visibility to public in GitHub's package settings.
+
+Use the digest reported in the workflow summary for cloud jobs:
+
+```bash
+docker pull ghcr.io/sebibi/ai-race-driver@sha256:<digest>
+```
+
+A provider-neutral GPU job needs one NVIDIA GPU, the immutable image reference, an
+`ai-race-train ... --output /outputs/<run>` command, runtime-injected `WANDB_*` variables, and
+persistent storage mounted at `/outputs`. The current trainer uses one JAX device; requesting
+multiple GPUs does not yet distribute training across them.
+
 ## Commands
 
 ```bash
