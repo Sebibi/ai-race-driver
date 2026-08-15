@@ -52,13 +52,13 @@ def _nonnegative_int(value: str) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--total-timesteps", type=int, default=8_388_608 * 8)
+    parser.add_argument("--total-timesteps", type=int, default=8_388_608 * 128)
     parser.add_argument("--num-envs", type=int, default=2_048)
     parser.add_argument("--num-steps", type=int, default=128)
     parser.add_argument(
         "--log-every-updates",
         type=_positive_int,
-        default=16,
+        default=64,
         help="PPO updates per compiled chunk and live logging interval",
     )
     parser.add_argument(
