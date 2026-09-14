@@ -6,6 +6,8 @@ on:
     branches:
       - master
     types:
+      - opened
+      - synchronize
       - closed
 
 permissions:
@@ -13,7 +15,7 @@ permissions:
 
 jobs:
   train:
-    if: github.event.pull_request.merged == true
+    # if: github.event.pull_request.merged == true
     name: Default training
     runs-on: ubuntu-latest
     steps:
@@ -31,7 +33,7 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - name: Train with default parameters
-        run: uv run ai-race-train --total-timesteps 67108864 --num-envs 2048 --num-steps 128 --log-every-updates 64
+        run: uv run ai-race-train --total-timesteps 67108864 --num-envs 2048 --num-steps 64 --log-every-updates 64
         env:
           WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
           WANDB_ENTITY: ${{ secrets.WANDB_ENTITY }}
