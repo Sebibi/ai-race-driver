@@ -2,6 +2,9 @@ name: Training performance
 run-name: Train ${{ github.event.pull_request.base.ref }}@${{ github.event.pull_request.merge_commit_sha }}
 
 on:
+  push:
+    branches:
+      - feature/train_param_tune
   pull_request_target:
     branches:
       - master
@@ -31,7 +34,7 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - name: Train with default parameters
-        run: uv run ai-race-train --total-timesteps 67108864 --num-envs 2048 --num-steps 128 --log-every-updates 64
+        run: uv run ai-race-train --total-timesteps 67108864 --num-envs 2048 --num-steps 64 --log-every-updates 64
         env:
           WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
           WANDB_ENTITY: ${{ secrets.WANDB_ENTITY }}
