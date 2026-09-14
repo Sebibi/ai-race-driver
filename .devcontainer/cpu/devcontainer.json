@@ -1,0 +1,23 @@
+{
+  "name": "AI Race Driver (CPU)",
+  "build": {
+    "dockerfile": "../../Dockerfile",
+    "context": "../..",
+    "options": ["--platform=linux/amd64"],
+    "target": "cpu"
+  },
+  "remoteUser": "coder",
+  "postCreateCommand": "uv sync --locked --inexact",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "charliermarsh.ruff",
+        "ms-python.mypy-type-checker",
+        "ms-python.python"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/opt/venv/bin/python"
+      }
+    }
+  }
+}

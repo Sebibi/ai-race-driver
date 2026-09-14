@@ -28,6 +28,7 @@ def test_get_git_metadata_uses_ci_branch_for_detached_head(monkeypatch: Any) -> 
         ("rev-parse", "HEAD"): "def456",
     }
     monkeypatch.setattr(metadata, "_git_output", lambda _, *args: outputs[args])
+    monkeypatch.delenv("AI_RACE_GIT_BRANCH", raising=False)
     monkeypatch.setenv("GITHUB_HEAD_REF", "feature/pull-request")
 
     assert metadata.get_git_metadata()["git_branch"] == "feature/pull-request"
@@ -38,11 +39,38 @@ def test_get_git_metadata_falls_back_when_git_is_unavailable(monkeypatch: Any) -
         raise subprocess.CalledProcessError(1, ["git"])
 
     monkeypatch.setattr(metadata, "_git_output", fail)
+    for name in (
+        "AI_RACE_GIT_BRANCH",
+        "AI_RACE_GIT_COMMIT_MESSAGE",
+        "AI_RACE_GIT_COMMIT_HASH",
+        "GITHUB_HEAD_REF",
+        "GITHUB_REF_NAME",
+        "GITHUB_SHA",
+    ):
+        monkeypatch.delenv(name, raising=False)
 
     assert metadata.get_git_metadata() == {
         "git_branch": "unknown",
         "git_commit_message": "unknown",
         "git_commit_hash": "unknown",
+    }
+
+
+def test_get_git_metadata_uses_image_environment_when_git_is_unavailable(
+    monkeypatch: Any,
+) -> None:
+    def fail(*_: object, **__: object) -> str:
+        raise subprocess.CalledProcessError(1, ["git"])
+
+    monkeypatch.setattr(metadata, "_git_output", fail)
+    monkeypatch.setenv("AI_RACE_GIT_BRANCH", "feature/container")
+    monkeypatch.setenv("AI_RACE_GIT_COMMIT_MESSAGE", "Build CUDA image")
+    monkeypatch.setenv("AI_RACE_GIT_COMMIT_HASH", "0123456789abcdef")
+
+    assert metadata.get_git_metadata() == {
+        "git_branch": "feature/container",
+        "git_commit_message": "Build CUDA image",
+        "git_commit_hash": "0123456789abcdef",
     }
 
 
