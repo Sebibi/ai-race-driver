@@ -2,13 +2,12 @@ name: Training performance
 run-name: Train ${{ github.event.pull_request.base.ref }}@${{ github.event.pull_request.merge_commit_sha }}
 
 on:
-  push:
-    branches:
-      - feature/train_param_tune
   pull_request_target:
     branches:
       - master
     types:
+      - opened
+      - synchronize
       - closed
 
 permissions:
